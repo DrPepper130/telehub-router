@@ -120,7 +120,10 @@ export default function SiteHeader() {
                                 href="/profile"
                                 className="headerButton profileButton"
                             >
-                                <span aria-hidden="true">♙</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2C74F4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+                                    <circle cx="12" cy="7" r="4" />
+                                </svg>
                                 <span>{displayName}</span>
                             </a>
 
@@ -128,7 +131,10 @@ export default function SiteHeader() {
                                 href="/add-channel"
                                 className="headerButton addChannelButton"
                             >
-                                <span aria-hidden="true">＋</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <line x1="12" y1="5" x2="12" y2="19" />
+                                    <line x1="5" y1="12" x2="19" y2="12" />
+                                </svg>
                                 <span>Add Your Channel</span>
                             </a>
 
@@ -144,7 +150,11 @@ export default function SiteHeader() {
                                 className="headerButton"
                                 onClick={signOut}
                             >
-                                <span aria-hidden="true">↪</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                                    <polyline points="16 17 21 12 16 7" />
+                                    <line x1="21" y1="12" x2="9" y2="12" />
+                                </svg>
                                 <span>Sign out</span>
                             </button>
                         </>
@@ -173,7 +183,11 @@ export default function SiteHeader() {
                     aria-expanded={menuOpen}
                     aria-label="Open menu"
                 >
-                    <span aria-hidden="true">☰</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <line x1="4" y1="6" x2="20" y2="6" />
+                        <line x1="4" y1="12" x2="20" y2="12" />
+                        <line x1="4" y1="18" x2="20" y2="18" />
+                    </svg>
                     <span>Menu</span>
                 </button>
             </div>
