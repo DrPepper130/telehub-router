@@ -1,1 +1,679 @@
+* {
+    box-sizing: border-box;
+}
 
+html,
+body {
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family:
+        Inter,
+        ui-sans-serif,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+
+    color: #102a43;
+    background: #dcebfa;
+}
+
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.page {
+    min-height: 100vh;
+    background-color: #c9e2f5;
+    background-size: cover;
+    background-position: center;
+}
+
+.topBanner {
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    background: #0878ff;
+    color: white;
+
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.header {
+    height: 76px;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    padding: 0 32px;
+
+    background: rgba(248, 252, 255, 0.96);
+
+    border-bottom: 1px solid rgba(90, 130, 170, 0.15);
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
+    font-size: 18px;
+}
+
+.brandIcon {
+    width: 34px;
+    height: 34px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    border-radius: 50%;
+
+    background: #0878ff;
+    color: white;
+
+    font-weight: 900;
+}
+
+.online {
+    margin-left: 4px;
+
+    padding: 6px 10px;
+
+    border-radius: 10px;
+
+    background: white;
+    border: 1px solid #d7e5f3;
+
+    color: #274a69;
+
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.headerActions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.loginButton,
+.addButton {
+    padding: 10px 16px;
+    border-radius: 9px;
+
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.loginButton {
+    background: white;
+    border: 1px solid #d6e2ef;
+}
+
+.addButton {
+    background: #2486ff;
+    color: white;
+}
+
+.container {
+    width: min(1120px, calc(100% - 40px));
+
+    margin: 0 auto;
+
+    padding: 54px 0 70px;
+}
+
+.back {
+    display: inline-block;
+
+    margin-bottom: 24px;
+
+    font-size: 14px;
+    font-weight: 750;
+}
+
+.card {
+    background: rgba(246, 251, 255, 0.9);
+
+    border: 1px solid rgba(255, 255, 255, 0.7);
+
+    border-radius: 28px;
+
+    box-shadow:
+        0 12px 30px rgba(43, 87, 125, 0.06);
+}
+
+.hero {
+    padding: 30px;
+}
+
+.listingTop {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+}
+
+.avatarWrap {
+    flex: 0 0 auto;
+}
+
+.avatar {
+    width: 112px;
+    height: 112px;
+
+    object-fit: cover;
+
+    border-radius: 24px;
+
+    box-shadow: 0 12px 30px rgba(20, 60, 100, 0.18);
+}
+
+.placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    background: linear-gradient(
+        135deg,
+        #0d6edc,
+        #8dcaff
+    );
+
+    color: white;
+
+    font-size: 46px;
+    font-weight: 900;
+}
+
+.identity {
+    min-width: 0;
+}
+
+.badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+
+    margin-bottom: 5px;
+}
+
+.typeBadge,
+.categoryBadge {
+    display: inline-flex;
+    align-items: center;
+
+    padding: 4px 8px;
+
+    border-radius: 999px;
+
+    font-size: 10px;
+    font-weight: 800;
+}
+
+.typeBadge {
+    background: #e6f2ff;
+    color: #0675ff;
+}
+
+.categoryBadge {
+    background: #eef4fa;
+    color: #526f8b;
+}
+
+h1 {
+    margin: 0;
+
+    color: #102f61;
+
+    font-size: clamp(32px, 5vw, 48px);
+    line-height: 1;
+    letter-spacing: -0.05em;
+}
+
+.shortDescription {
+    margin: 10px 0 0;
+
+    color: #6786a8;
+
+    font-size: 14px;
+}
+
+.statsRow {
+    display: grid;
+    grid-template-columns:
+        minmax(190px, 1.6fr)
+        1fr
+        1fr
+        auto
+        auto;
+
+    gap: 12px;
+
+    align-items: stretch;
+
+    margin-top: 28px;
+}
+
+.usernameStat,
+.stat {
+    min-height: 68px;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+
+    padding: 10px 16px;
+
+    border-radius: 14px;
+}
+
+.usernameStat {
+    background: white;
+    border: 1px solid #d9e6f2;
+}
+
+.usernameStat span,
+.stat span,
+.detail span {
+    font-size: 8px;
+    font-weight: 850;
+
+    letter-spacing: 0.06em;
+}
+
+.usernameStat span {
+    color: #7892ad;
+}
+
+.usernameStat strong {
+    margin-top: 5px;
+
+    color: #102f61;
+
+    font-size: 15px;
+}
+
+.stat {
+    color: white;
+}
+
+.stat.green {
+    background: #129653;
+}
+
+.stat.blue {
+    background: #3c94f5;
+}
+
+.stat strong {
+    margin-top: 3px;
+
+    font-size: 25px;
+}
+
+.saveButton,
+.joinButton {
+    align-self: center;
+
+    white-space: nowrap;
+
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.saveButton {
+    padding: 10px 13px;
+
+    background: white;
+    border: 1px solid #d8e5f2;
+
+    border-radius: 10px;
+}
+
+.joinButton {
+    padding: 13px 22px;
+
+    background: #09aa55;
+    color: white;
+
+    border-radius: 999px;
+
+    box-shadow: 0 6px 18px rgba(8, 169, 85, 0.28);
+}
+
+.twoColumn {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+
+    gap: 18px;
+
+    margin-top: 24px;
+}
+
+.infoCard {
+    padding: 28px;
+}
+
+h2 {
+    margin: 0 0 12px;
+
+    color: #102f61;
+
+    font-size: 23px;
+
+    letter-spacing: -0.035em;
+}
+
+.infoCard p,
+.safety p,
+.faqItem p {
+    margin: 0;
+
+    color: #6281a2;
+
+    font-size: 14px;
+    line-height: 1.65;
+}
+
+.detailSection {
+    margin-top: 24px;
+
+    padding: 28px;
+}
+
+.detailGrid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+
+    gap: 10px;
+}
+
+.detail {
+    min-height: 54px;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+
+    padding: 8px 10px;
+
+    background: #f7fbff;
+
+    border: 1px solid #cfe0ee;
+    border-radius: 8px;
+}
+
+.detail span {
+    color: #7994ad;
+}
+
+.detail strong {
+    margin-top: 3px;
+
+    color: #102f61;
+
+    text-transform: lowercase;
+}
+
+.detailLabels {
+    display: flex;
+    justify-content: space-between;
+
+    margin-top: 10px;
+
+    color: #7890aa;
+
+    font-family: monospace;
+    font-size: 10px;
+}
+
+.listingId {
+    margin-top: 3px;
+
+    text-align: right;
+
+    color: #7890aa;
+
+    font-family: monospace;
+    font-size: 9px;
+
+    overflow-wrap: anywhere;
+}
+
+.safety {
+    margin-top: 24px;
+
+    padding: 28px;
+}
+
+.reportButton {
+    display: inline-block;
+
+    margin-top: 14px;
+
+    padding: 9px 12px;
+
+    border-radius: 7px;
+
+    background: #e7f2fd;
+
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.faq {
+    margin-top: 26px;
+}
+
+.faqItem {
+    margin-top: 10px;
+
+    padding: 19px 22px;
+
+    background: rgba(247, 251, 255, 0.9);
+
+    border-radius: 20px;
+}
+
+.faqItem h3 {
+    margin: 0 0 8px;
+
+    color: #102f61;
+
+    font-size: 14px;
+}
+
+.bottomLinks {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+
+    margin-top: 20px;
+
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.footer {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+
+    gap: 50px;
+
+    padding: 55px max(30px, calc((100% - 880px) / 2));
+
+    background: #f7f7f7;
+}
+
+.footer h3 {
+    margin: 0 0 14px;
+
+    color: #333;
+
+    font-size: 16px;
+}
+
+.footer a {
+    display: block;
+
+    margin-top: 10px;
+
+    color: #777;
+
+    font-size: 12px;
+}
+
+@media (max-width: 850px) {
+    .header {
+        padding: 0 18px;
+    }
+
+    .headerActions .loginButton {
+        display: none;
+    }
+
+    .container {
+        width: min(100% - 24px, 700px);
+
+        padding-top: 28px;
+    }
+
+    .hero {
+        padding: 20px;
+    }
+
+    .listingTop {
+        align-items: flex-start;
+    }
+
+    .avatar {
+        width: 78px;
+        height: 78px;
+
+        border-radius: 18px;
+    }
+
+    h1 {
+        font-size: 32px;
+    }
+
+    .statsRow {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .usernameStat {
+        grid-column: 1 / -1;
+    }
+
+    .saveButton,
+    .joinButton {
+        text-align: center;
+    }
+
+    .twoColumn {
+        grid-template-columns: 1fr;
+    }
+
+    .detailGrid {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .footer {
+        grid-template-columns: 1fr 1fr;
+
+        gap: 35px;
+
+        padding: 45px 28px;
+    }
+}
+
+@media (max-width: 520px) {
+    .topBanner {
+        height: 20px;
+
+        font-size: 8px;
+    }
+
+    .header {
+        height: 66px;
+    }
+
+    .brand {
+        font-size: 14px;
+    }
+
+    .brandIcon {
+        width: 28px;
+        height: 28px;
+    }
+
+    .online {
+        padding: 4px 6px;
+
+        font-size: 8px;
+    }
+
+    .addButton {
+        padding: 8px 10px;
+
+        font-size: 10px;
+    }
+
+    .listingTop {
+        gap: 12px;
+    }
+
+    .avatar {
+        width: 66px;
+        height: 66px;
+    }
+
+    h1 {
+        font-size: 26px;
+    }
+
+    .shortDescription {
+        font-size: 12px;
+    }
+
+    .statsRow {
+        grid-template-columns: 1fr;
+    }
+
+    .usernameStat,
+    .stat {
+        min-height: 60px;
+    }
+
+    .twoColumn {
+        gap: 12px;
+    }
+
+    .infoCard,
+    .detailSection,
+    .safety {
+        padding: 20px;
+
+        border-radius: 20px;
+    }
+
+    .detailGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .footer {
+        grid-template-columns: 1fr 1fr;
+
+        gap: 26px;
+    }
+}
