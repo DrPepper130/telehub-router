@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
-      "source": "/((?!channel/enhypenisalways7$).*)",
+      "source": "/((?!channel/).*)",
       "destination": "https://blessed-estimate-419559.framer.app/$1"
     }
   ]
