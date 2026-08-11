@@ -90,7 +90,7 @@ export default function SiteHeader() {
 
     const onlineLabel =
         onlineCount >= 1000
-            ? `${Math.round(onlineCount / 1000)}k`
+            ? `${(onlineCount / 1000).toFixed(1)}k`
             : onlineCount.toLocaleString()
 
     return (
