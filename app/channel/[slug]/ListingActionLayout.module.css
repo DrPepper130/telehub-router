@@ -1,37 +1,36 @@
-.actionGrid {
-    grid-template-columns:
-        minmax(260px, 1.65fr)
-        minmax(145px, 0.9fr)
-        auto;
-    align-items: stretch;
+.mobileJoinOrder {
+    /* Desktop intentionally inherits the original globals.css layout unchanged. */
 }
 
-.primaryColumn {
-    min-width: 0;
-    display: grid;
-    gap: 12px;
-}
-
-.primaryColumn :global(.joinButton) {
-    width: 100%;
-}
-
-@media (max-width: 900px) {
-    .actionGrid {
-        grid-template-columns: 1fr 1fr;
+@media (max-width: 700px) {
+    .mobileJoinOrder :global(.usernameCard) {
+        order: 1;
+        grid-column: 1 / -1;
     }
 
-    .primaryColumn {
+    .mobileJoinOrder :global(.joinButton) {
+        order: 2;
         grid-column: 1 / -1;
+        width: 100%;
+    }
+
+    .mobileJoinOrder :global(.memberCard) {
+        order: 3;
+    }
+
+    .mobileJoinOrder :global(.listingVoteCard) {
+        order: 4;
+    }
+
+    .mobileJoinOrder :global(.favoriteButton) {
+        order: 5;
     }
 }
 
 @media (max-width: 440px) {
-    .actionGrid {
-        grid-template-columns: 1fr;
-    }
-
-    .primaryColumn {
-        grid-column: auto;
+    .mobileJoinOrder :global(.memberCard),
+    .mobileJoinOrder :global(.listingVoteCard),
+    .mobileJoinOrder :global(.favoriteButton) {
+        grid-column: 1;
     }
 }
