@@ -1,0 +1,37 @@
+.actionGrid {
+    grid-template-columns:
+        minmax(260px, 1.65fr)
+        minmax(145px, 0.9fr)
+        auto;
+    align-items: stretch;
+}
+
+.primaryColumn {
+    min-width: 0;
+    display: grid;
+    gap: 12px;
+}
+
+.primaryColumn :global(.joinButton) {
+    width: 100%;
+}
+
+@media (max-width: 900px) {
+    .actionGrid {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .primaryColumn {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 440px) {
+    .actionGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .primaryColumn {
+        grid-column: auto;
+    }
+}
