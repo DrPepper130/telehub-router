@@ -4,6 +4,7 @@ import { notFound } from "next/navigation"
 import BackToListings from "./BackToListings"
 import ListingActions from "./ListingActions"
 import SiteHeader from "./SiteHeader"
+import styles from "./ListingActionLayout.module.css"
 
 import {
     getCategories,
@@ -189,33 +190,37 @@ export default async function ChannelPage({ params }: PageProps) {
                             </div>
                         </div>
 
-                        <div className="overviewActions">
-                            <div className="usernameCard">
-                                <span>TELEGRAM USERNAME</span>
-                                <strong>{username || "—"}</strong>
-                            </div>
+                        <div
+                            className={`overviewActions ${styles.actionGrid}`}
+                        >
+                            <div className={styles.primaryColumn}>
+                                <div className="usernameCard">
+                                    <span>TELEGRAM USERNAME</span>
+                                    <strong>{username || "—"}</strong>
+                                </div>
 
-                            <a
-                                className="joinButton"
-                                href={joinUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                            >
-                                Join Telegram
-                            </a>
+                                <a
+                                    className="joinButton"
+                                    href={joinUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    Join Telegram
+                                </a>
 
-                            <div
-                                className="memberCard"
-                                title={
-                                    listing.last_synced_at
-                                        ? `Last updated ${new Date(
-                                              listing.last_synced_at
-                                          ).toLocaleString()}`
-                                        : undefined
-                                }
-                            >
-                                <span>MEMBERS</span>
-                                <strong>{compactNumber(members)}</strong>
+                                <div
+                                    className="memberCard"
+                                    title={
+                                        listing.last_synced_at
+                                            ? `Last updated ${new Date(
+                                                  listing.last_synced_at
+                                              ).toLocaleString()}`
+                                            : undefined
+                                    }
+                                >
+                                    <span>MEMBERS</span>
+                                    <strong>{compactNumber(members)}</strong>
+                                </div>
                             </div>
 
                             <ListingActions
