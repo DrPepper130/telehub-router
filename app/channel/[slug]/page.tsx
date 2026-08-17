@@ -195,6 +195,15 @@ export default async function ChannelPage({ params }: PageProps) {
                                 <strong>{username || "—"}</strong>
                             </div>
 
+                            <a
+                                className="joinButton"
+                                href={joinUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                Join Telegram
+                            </a>
+
                             <div
                                 className="memberCard"
                                 title={
@@ -222,15 +231,6 @@ export default async function ChannelPage({ params }: PageProps) {
                                 imageUrl={listing.image_url}
                                 description={longDescription}
                             />
-
-                            <a
-                                className="joinButton"
-                                href={joinUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                            >
-                                Join Telegram
-                            </a>
                         </div>
                     </section>
 
