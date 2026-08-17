@@ -191,36 +191,25 @@ export default async function ChannelPage({ params }: PageProps) {
                         </div>
 
                         <div
-                            className={`overviewActions ${styles.actionGrid}`}
+                            className={`overviewActions ${styles.mobileJoinOrder}`}
                         >
-                            <div className={styles.primaryColumn}>
-                                <div className="usernameCard">
-                                    <span>TELEGRAM USERNAME</span>
-                                    <strong>{username || "—"}</strong>
-                                </div>
+                            <div className="usernameCard">
+                                <span>TELEGRAM USERNAME</span>
+                                <strong>{username || "—"}</strong>
+                            </div>
 
-                                <a
-                                    className="joinButton"
-                                    href={joinUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                >
-                                    Join Telegram
-                                </a>
-
-                                <div
-                                    className="memberCard"
-                                    title={
-                                        listing.last_synced_at
-                                            ? `Last updated ${new Date(
-                                                  listing.last_synced_at
-                                              ).toLocaleString()}`
-                                            : undefined
-                                    }
-                                >
-                                    <span>MEMBERS</span>
-                                    <strong>{compactNumber(members)}</strong>
-                                </div>
+                            <div
+                                className="memberCard"
+                                title={
+                                    listing.last_synced_at
+                                        ? `Last updated ${new Date(
+                                              listing.last_synced_at
+                                          ).toLocaleString()}`
+                                        : undefined
+                                }
+                            >
+                                <span>MEMBERS</span>
+                                <strong>{compactNumber(members)}</strong>
                             </div>
 
                             <ListingActions
@@ -236,6 +225,15 @@ export default async function ChannelPage({ params }: PageProps) {
                                 imageUrl={listing.image_url}
                                 description={longDescription}
                             />
+
+                            <a
+                                className="joinButton"
+                                href={joinUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                Join Telegram
+                            </a>
                         </div>
                     </section>
 
