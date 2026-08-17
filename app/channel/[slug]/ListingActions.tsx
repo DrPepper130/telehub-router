@@ -4,11 +4,57 @@ import { createClient } from "@supabase/supabase-js"
 import { useEffect, useMemo, useState } from "react"
 
 const BACKEND_URL = "https://telegramboard.onrender.com"
+const ANALYTICS_VISITOR_STORAGE_KEY = "telehub_analytics_visitor_id"
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
+
+type AnalyticsEvent = "page_view" | "telegram_click"
+
+function getAnalyticsVisitorId() {
+    try {
+        const existing = window.localStorage.getItem(
+            ANALYTICS_VISITOR_STORAGE_KEY
+        )
+        if (existing) return existing
+
+        const created =
+            typeof crypto !== "undefined" && "randomUUID" in crypto
+                ? crypto.randomUUID()
+                : `tv_${Date.now().toString(36)}_${Math.random()
+                      .toString(36)
+                      .slice(2)}`
+
+        window.localStorage.setItem(ANALYTICS_VISITOR_STORAGE_KEY, created)
+        return created
+    } catch {
+        return `tv_${Date.now().toString(36)}_${Math.random()
+            .toString(36)
+            .slice(2)}`
+    }
+}
+
+function trackListingAnalytics(
+    listingId: string,
+    eventType: AnalyticsEvent
+) {
+    if (!listingId || typeof window === "undefined") return
+
+    fetch(`${BACKEND_URL}/api/analytics/track`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            listing_id: listingId,
+            event_type: eventType,
+            visitor_id: getAnalyticsVisitorId(),
+        }),
+        keepalive: true,
+    }).catch(() => {})
+}
 
 type Props = {
     listingId: string
@@ -60,6 +106,30 @@ export default function ListingActions({
             `https://telehub.to/channel/${encodeURIComponent(shortInvite)}`,
         [shortInvite]
     )
+
+    useEffect(() => {
+        trackListingAnalytics(listingId, "page_view")
+
+        // The Join Telegram anchor is rendered by the server page. Capture its
+        // click here so the page can stay server-rendered for SEO.
+        const handleListingJoinClick = (event: MouseEvent) => {
+            const target = event.target as HTMLElement | null
+            const joinLink = target?.closest?.("a.joinButton")
+            if (!joinLink) return
+
+            trackListingAnalytics(listingId, "telegram_click")
+        }
+
+        document.addEventListener("click", handleListingJoinClick, true)
+
+        return () => {
+            document.removeEventListener(
+                "click",
+                handleListingJoinClick,
+                true
+            )
+        }
+    }, [listingId])
 
     useEffect(() => {
         let cancelled = false
