@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import type { ReactNode } from "react"
 import { notFound } from "next/navigation"
 
 import BackToListings from "./BackToListings"
@@ -40,6 +41,281 @@ function compactNumber(value: number | null | undefined) {
     return number.toLocaleString()
 }
 
+
+const ANALYTICS_PILOT_SLUG = "telehub"
+const TELEGRAMBOARD_URL = "https://telegramboard.onrender.com"
+
+type PilotAnalytics = {
+    ok?: boolean
+    pilot?: boolean
+    slug?: string
+    listing_id?: string
+    current_members?: number
+    statistics_updated_at?: string | null
+    growth?: {
+        day_1?: GrowthStat
+        day_7?: GrowthStat
+        day_30?: GrowthStat
+    }
+    member_history?: Array<{
+        member_count: number
+        created_at: string
+    }>
+    activity?: {
+        latest_post_at?: string | null
+        posts_observed_last_7_days?: number
+        average_observed_posts_per_day?: number
+        public_preview_post_count?: number
+        source?: string | null
+        warning?: string | null
+        error?: string | null
+    }
+    network?: {
+        linked_communities?: number
+        channels_linking_here?: number
+        edge_storage_available?: boolean
+        related_communities?: Array<{
+            id: string
+            short_invite?: string | null
+            name?: string | null
+            username?: string | null
+            member_count?: number
+            icon_url?: string | null
+            listing_type?: string | null
+        }>
+    }
+    recent_posts?: string[]
+}
+
+type GrowthStat = {
+    days?: number
+    change?: number | null
+    percent?: number | null
+    baseline_members?: number | null
+    baseline_at?: string | null
+}
+
+async function getPilotAnalytics(slug: string): Promise<PilotAnalytics | null> {
+    if (String(slug || "").toLowerCase() !== ANALYTICS_PILOT_SLUG) {
+        return null
+    }
+
+    try {
+        const response = await fetch(
+            `${TELEGRAMBOARD_URL}/api/public/listing-analytics-pilot?slug=${encodeURIComponent(slug)}`,
+            {
+                next: { revalidate: 900 },
+            }
+        )
+
+        if (!response.ok) return null
+
+        const payload = (await response.json()) as PilotAnalytics
+        return payload?.ok ? payload : null
+    } catch {
+        return null
+    }
+}
+
+function signedNumber(value: number | null | undefined) {
+    if (value === null || value === undefined || !Number.isFinite(Number(value))) {
+        return "—"
+    }
+
+    const number = Number(value)
+    if (number === 0) return "0"
+    return `${number > 0 ? "+" : ""}${number.toLocaleString()}`
+}
+
+function growthText(stat: GrowthStat | null | undefined) {
+    if (!stat || stat.change === null || stat.change === undefined) return "—"
+
+    const percent =
+        stat.percent === null || stat.percent === undefined
+            ? ""
+            : ` (${stat.percent > 0 ? "+" : ""}${Number(stat.percent).toFixed(1)}%)`
+
+    return `${signedNumber(stat.change)}${percent}`
+}
+
+function formatUpdatedDate(value: string | null | undefined) {
+    if (!value) return "Unknown"
+
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return "Unknown"
+
+    return date.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+    })
+}
+
+function formatRelativeTime(value: string | null | undefined) {
+    if (!value) return "Unavailable"
+
+    const timestamp = new Date(value).getTime()
+    if (!Number.isFinite(timestamp)) return "Unavailable"
+
+    const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000))
+    if (seconds < 60) return "Less than a minute ago"
+
+    const minutes = Math.floor(seconds / 60)
+    if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`
+
+    const hours = Math.floor(minutes / 60)
+    if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`
+
+    const days = Math.floor(hours / 24)
+    return `${days} day${days === 1 ? "" : "s"} ago`
+}
+
+function MemberGrowthChart({
+    history,
+}: {
+    history: Array<{ member_count: number; created_at: string }>
+}) {
+    const points = (history || [])
+        .map((item) => ({
+            value: Number(item.member_count || 0),
+            time: new Date(item.created_at).getTime(),
+        }))
+        .filter(
+            (item) =>
+                Number.isFinite(item.value) &&
+                Number.isFinite(item.time)
+        )
+
+    if (points.length < 2) {
+        return (
+            <div
+                style={{
+                    border: "1px solid rgba(15, 23, 42, 0.12)",
+                    borderRadius: 16,
+                    padding: 20,
+                    color: "#64748b",
+                    background: "rgba(255,255,255,0.62)",
+                }}
+            >
+                More member snapshots are needed before the growth chart can be shown.
+            </div>
+        )
+    }
+
+    const values = points.map((point) => point.value)
+    const min = Math.min(...values)
+    const max = Math.max(...values)
+    const spread = Math.max(1, max - min)
+    const width = 900
+    const height = 260
+    const padX = 28
+    const padY = 24
+
+    const path = points
+        .map((point, index) => {
+            const x =
+                padX +
+                (index / Math.max(1, points.length - 1)) *
+                    (width - padX * 2)
+            const y =
+                height -
+                padY -
+                ((point.value - min) / spread) *
+                    (height - padY * 2)
+
+            return `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`
+        })
+        .join(" ")
+
+    return (
+        <div
+            style={{
+                overflow: "hidden",
+                border: "1px solid rgba(15, 23, 42, 0.12)",
+                borderRadius: 16,
+                background: "rgba(255,255,255,0.72)",
+            }}
+        >
+            <svg
+                viewBox={`0 0 ${width} ${height}`}
+                role="img"
+                aria-label="Telegram member growth history"
+                style={{ display: "block", width: "100%", height: "auto" }}
+            >
+                <line
+                    x1={padX}
+                    x2={width - padX}
+                    y1={height - padY}
+                    y2={height - padY}
+                    stroke="rgba(15,23,42,0.12)"
+                />
+                <line
+                    x1={padX}
+                    x2={width - padX}
+                    y1={padY}
+                    y2={padY}
+                    stroke="rgba(15,23,42,0.08)"
+                />
+                <path
+                    d={path}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                />
+            </svg>
+            <div
+                style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    padding: "0 18px 16px",
+                    fontSize: 13,
+                    color: "#64748b",
+                }}
+            >
+                <span>{compactNumber(points[0].value)}</span>
+                <span>{compactNumber(points[points.length - 1].value)}</span>
+            </div>
+        </div>
+    )
+}
+
+function AnalyticsStat({
+    label,
+    value,
+}: {
+    label: string
+    value: ReactNode
+}) {
+    return (
+        <div
+            style={{
+                padding: "16px 18px",
+                borderRadius: 14,
+                border: "1px solid rgba(15, 23, 42, 0.1)",
+                background: "rgba(255,255,255,0.68)",
+            }}
+        >
+            <div
+                style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    letterSpacing: "0.05em",
+                    textTransform: "uppercase",
+                    color: "#64748b",
+                    marginBottom: 6,
+                }}
+            >
+                {label}
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{value}</div>
+        </div>
+    )
+}
+
+
 export async function generateMetadata({
     params,
 }: PageProps): Promise<Metadata> {
@@ -56,9 +332,29 @@ export async function generateMetadata({
         }
     }
 
-    const title = getSeoTitle(listing)
-    const description = getSeoDescription(listing)
-    const canonicalSlug = listing.short_invite || slug
+    const canonicalSlug = String(listing.short_invite || slug)
+    const pilotAnalytics = await getPilotAnalytics(canonicalSlug)
+    const name = getListingName(listing)
+    const listingType = getListingType(listing)
+    const members = Number(listing.member_count || 0)
+
+    const title =
+        canonicalSlug.toLowerCase() === ANALYTICS_PILOT_SLUG
+            ? `${name} Telegram ${listingType === "group" ? "Group " : ""}– Members, Growth & Statistics | TeleHub`
+            : getSeoTitle(listing)
+
+    const growth30 = pilotAnalytics?.growth?.day_30
+    const growthPhrase =
+        growth30?.change !== null &&
+        growth30?.change !== undefined
+            ? `, ${signedNumber(growth30.change)} members over 30 days`
+            : ""
+
+    const description =
+        canonicalSlug.toLowerCase() === ANALYTICS_PILOT_SLUG
+            ? `View ${name} Telegram statistics including ${members.toLocaleString()} members${growthPhrase}, recent activity, related communities, growth history and channel information.`
+            : getSeoDescription(listing)
+
     const canonical = `https://telehub.to/channel/${canonicalSlug}`
 
     return {
@@ -112,6 +408,7 @@ export default async function ChannelPage({ params }: PageProps) {
     const isNsfw = Boolean(listing.is_nsfw)
 
     const canonicalSlug = String(listing.short_invite || slug)
+    const pilotAnalytics = await getPilotAnalytics(canonicalSlug)
     const joinUrl =
         listing.telegram_link ||
         (username
@@ -210,6 +507,12 @@ export default async function ChannelPage({ params }: PageProps) {
                             >
                                 <span>MEMBERS</span>
                                 <strong>{compactNumber(members)}</strong>
+                                {pilotAnalytics?.growth?.day_30?.change !== null &&
+                                pilotAnalytics?.growth?.day_30?.change !== undefined ? (
+                                    <small style={{ display: "block", marginTop: 4 }}>
+                                        {growthText(pilotAnalytics.growth.day_30)} in 30 days
+                                    </small>
+                                ) : null}
                             </div>
 
                             <ListingActions
@@ -252,6 +555,234 @@ export default async function ChannelPage({ params }: PageProps) {
                             <p>{longDescription}</p>
                         </article>
                     </section>
+
+                    {pilotAnalytics ? (
+                        <section
+                            className="detailsCard"
+                            style={{ display: "grid", gap: 24 }}
+                        >
+                            <div>
+                                <h2 style={{ marginBottom: 6 }}>Telegram statistics</h2>
+                                <p style={{ margin: 0, color: "#64748b" }}>
+                                    Statistics updated {formatUpdatedDate(
+                                        pilotAnalytics.statistics_updated_at
+                                    )}
+                                </p>
+                            </div>
+
+                            <div>
+                                <h3 style={{ marginBottom: 12 }}>Activity</h3>
+                                <div
+                                    style={{
+                                        display: "grid",
+                                        gridTemplateColumns:
+                                            "repeat(auto-fit, minmax(170px, 1fr))",
+                                        gap: 12,
+                                    }}
+                                >
+                                    <AnalyticsStat
+                                        label="Last public post"
+                                        value={formatRelativeTime(
+                                            pilotAnalytics.activity?.latest_post_at
+                                        )}
+                                    />
+                                    <AnalyticsStat
+                                        label="Recent posts (7d)"
+                                        value={
+                                            pilotAnalytics.activity
+                                                ?.posts_observed_last_7_days ?? "—"
+                                        }
+                                    />
+                                    <AnalyticsStat
+                                        label="Average posts/day"
+                                        value={
+                                            pilotAnalytics.activity
+                                                ?.average_observed_posts_per_day ?? "—"
+                                        }
+                                    />
+                                </div>
+                                {pilotAnalytics.activity?.warning ? (
+                                    <p
+                                        style={{
+                                            margin: "10px 0 0",
+                                            fontSize: 12,
+                                            color: "#64748b",
+                                        }}
+                                    >
+                                        {pilotAnalytics.activity.warning}
+                                    </p>
+                                ) : null}
+                            </div>
+
+                            <div>
+                                <h3 style={{ marginBottom: 12 }}>Member growth</h3>
+                                <MemberGrowthChart
+                                    history={pilotAnalytics.member_history || []}
+                                />
+                                <div
+                                    style={{
+                                        display: "grid",
+                                        gridTemplateColumns:
+                                            "repeat(auto-fit, minmax(150px, 1fr))",
+                                        gap: 12,
+                                        marginTop: 12,
+                                    }}
+                                >
+                                    <AnalyticsStat
+                                        label="24 hours"
+                                        value={growthText(
+                                            pilotAnalytics.growth?.day_1
+                                        )}
+                                    />
+                                    <AnalyticsStat
+                                        label="7 days"
+                                        value={growthText(
+                                            pilotAnalytics.growth?.day_7
+                                        )}
+                                    />
+                                    <AnalyticsStat
+                                        label="30 days"
+                                        value={growthText(
+                                            pilotAnalytics.growth?.day_30
+                                        )}
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <h3 style={{ marginBottom: 12 }}>
+                                    Telegram network
+                                </h3>
+                                <div
+                                    style={{
+                                        display: "grid",
+                                        gridTemplateColumns:
+                                            "repeat(auto-fit, minmax(170px, 1fr))",
+                                        gap: 12,
+                                    }}
+                                >
+                                    <AnalyticsStat
+                                        label="Linked communities"
+                                        value={
+                                            pilotAnalytics.network
+                                                ?.linked_communities ?? 0
+                                        }
+                                    />
+                                    <AnalyticsStat
+                                        label="Channels linking here"
+                                        value={
+                                            pilotAnalytics.network
+                                                ?.channels_linking_here ?? 0
+                                        }
+                                    />
+                                </div>
+                            </div>
+
+                            {pilotAnalytics.network?.related_communities?.length ? (
+                                <div>
+                                    <h3 style={{ marginBottom: 12 }}>
+                                        Related communities
+                                    </h3>
+                                    <div
+                                        style={{
+                                            display: "grid",
+                                            gridTemplateColumns:
+                                                "repeat(auto-fit, minmax(210px, 1fr))",
+                                            gap: 12,
+                                        }}
+                                    >
+                                        {pilotAnalytics.network.related_communities.map(
+                                            (related) => (
+                                                <a
+                                                    key={related.id}
+                                                    href={`/channel/${related.short_invite}`}
+                                                    style={{
+                                                        display: "flex",
+                                                        alignItems: "center",
+                                                        gap: 12,
+                                                        padding: 14,
+                                                        borderRadius: 14,
+                                                        border:
+                                                            "1px solid rgba(15, 23, 42, 0.1)",
+                                                        background:
+                                                            "rgba(255,255,255,0.68)",
+                                                        textDecoration: "none",
+                                                        color: "inherit",
+                                                    }}
+                                                >
+                                                    {related.icon_url ? (
+                                                        <img
+                                                            src={related.icon_url}
+                                                            alt=""
+                                                            width={42}
+                                                            height={42}
+                                                            style={{
+                                                                borderRadius: 12,
+                                                                objectFit: "cover",
+                                                            }}
+                                                        />
+                                                    ) : null}
+                                                    <span>
+                                                        <strong
+                                                            style={{
+                                                                display: "block",
+                                                            }}
+                                                        >
+                                                            {related.name ||
+                                                                related.username ||
+                                                                "Telegram community"}
+                                                        </strong>
+                                                        <small
+                                                            style={{
+                                                                color: "#64748b",
+                                                            }}
+                                                        >
+                                                            {compactNumber(
+                                                                related.member_count
+                                                            )}{" "}
+                                                            members
+                                                        </small>
+                                                    </span>
+                                                </a>
+                                            )
+                                        )}
+                                    </div>
+                                </div>
+                            ) : null}
+
+                            {pilotAnalytics.recent_posts?.length ? (
+                                <div>
+                                    <h3 style={{ marginBottom: 12 }}>
+                                        Recent public posts
+                                    </h3>
+                                    <div style={{ display: "grid", gap: 10 }}>
+                                        {pilotAnalytics.recent_posts.map(
+                                            (post, index) => (
+                                                <div
+                                                    key={`${index}-${post.slice(
+                                                        0,
+                                                        24
+                                                    )}`}
+                                                    style={{
+                                                        padding: "14px 16px",
+                                                        borderRadius: 14,
+                                                        border:
+                                                            "1px solid rgba(15, 23, 42, 0.1)",
+                                                        background:
+                                                            "rgba(255,255,255,0.68)",
+                                                    }}
+                                                >
+                                                    {post.length > 260
+                                                        ? `${post.slice(0, 260)}…`
+                                                        : post}
+                                                </div>
+                                            )
+                                        )}
+                                    </div>
+                                </div>
+                            ) : null}
+                        </section>
+                    ) : null}
 
                     <section className="detailsCard">
                         <h2>Listing details</h2>
