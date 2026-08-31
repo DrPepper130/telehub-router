@@ -106,7 +106,7 @@ async function getPilotAnalytics(slug: string): Promise<PilotAnalytics | null> {
         const response = await fetch(
             `${TELEGRAMBOARD_URL}/api/public/listing-analytics-pilot?slug=${encodeURIComponent(slug)}`,
             {
-                next: { revalidate: 900 },
+                cache: "no-store",
             }
         )
 
