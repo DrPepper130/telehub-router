@@ -13,8 +13,6 @@ import {
     getListingName,
     getListingType,
     getLongDescription,
-    getSeoDescription,
-    getSeoTitle,
     getShortDescription,
     getTelegramUsername,
 } from "@/lib/listings"
@@ -42,12 +40,10 @@ function compactNumber(value: number | null | undefined) {
 }
 
 
-const ANALYTICS_PILOT_SLUG = "telehub"
 const TELEGRAMBOARD_URL = "https://telegramboard.onrender.com"
 
-type PilotAnalytics = {
+type ListingAnalytics = {
     ok?: boolean
-    pilot?: boolean
     slug?: string
     listing_id?: string
     current_members?: number
@@ -62,6 +58,7 @@ type PilotAnalytics = {
         created_at: string
     }>
     activity?: {
+        available?: boolean
         latest_post_at?: string | null
         posts_observed_last_7_days?: number
         average_observed_posts_per_day?: number
@@ -71,6 +68,7 @@ type PilotAnalytics = {
         error?: string | null
     }
     network?: {
+        available?: boolean
         linked_communities?: number
         channels_linking_here?: number
         edge_storage_available?: boolean
@@ -86,6 +84,7 @@ type PilotAnalytics = {
             matching_tag_count?: number
         }>
     }
+    growth_available?: boolean
     recent_posts?: string[]
 }
 
@@ -97,27 +96,31 @@ type GrowthStat = {
     baseline_at?: string | null
 }
 
-async function getPilotAnalytics(slug: string): Promise<PilotAnalytics | null> {
-    if (String(slug || "").toLowerCase() !== ANALYTICS_PILOT_SLUG) {
-        return null
-    }
+async function getListingAnalytics(
+    slug: string
+): Promise<ListingAnalytics | null> {
+    const normalizedSlug = String(slug || "").trim()
+    if (!normalizedSlug) return null
 
     try {
         const response = await fetch(
-            `${TELEGRAMBOARD_URL}/api/public/listing-analytics-pilot?slug=${encodeURIComponent(slug)}`,
+            `${TELEGRAMBOARD_URL}/api/public/listing-analytics?slug=${encodeURIComponent(
+                normalizedSlug
+            )}`,
             {
-                cache: "no-store",
+                next: { revalidate: 3600 },
             }
         )
 
         if (!response.ok) return null
 
-        const payload = (await response.json()) as PilotAnalytics
+        const payload = (await response.json()) as ListingAnalytics
         return payload?.ok ? payload : null
     } catch {
         return null
     }
 }
+
 
 function signedNumber(value: number | null | undefined) {
     if (value === null || value === undefined || !Number.isFinite(Number(value))) {
@@ -335,27 +338,37 @@ export async function generateMetadata({
     }
 
     const canonicalSlug = String(listing.short_invite || slug)
-    const pilotAnalytics = await getPilotAnalytics(canonicalSlug)
+    const listingAnalytics = await getListingAnalytics(canonicalSlug)
     const name = getListingName(listing)
     const listingType = getListingType(listing)
     const members = Number(listing.member_count || 0)
 
-    const title =
-        canonicalSlug.toLowerCase() === ANALYTICS_PILOT_SLUG
-            ? `${name} Telegram ${listingType === "group" ? "Group " : ""}– Members, Growth & Statistics`
-            : getSeoTitle(listing)
+    const growth30 = listingAnalytics?.growth?.day_30
+    const hasGrowth =
+        growth30?.change !== null &&
+        growth30?.change !== undefined
 
-    const growth30 = pilotAnalytics?.growth?.day_30
+    const title = `${name} Telegram ${
+        listingType === "group" ? "Group " : ""
+    }– Members${hasGrowth ? ", Growth" : ""} & Statistics`
+
     const growthPhrase =
         growth30?.change !== null &&
         growth30?.change !== undefined
             ? `, ${signedNumber(growth30.change)} members over 30 days`
             : ""
 
-    const description =
-        canonicalSlug.toLowerCase() === ANALYTICS_PILOT_SLUG
-            ? `View ${name} Telegram statistics including ${members.toLocaleString()} members${growthPhrase}, recent activity, related communities, growth history and channel information.`
-            : getSeoDescription(listing)
+    const analyticsBits = [
+        listingAnalytics?.activity?.available ? "recent activity" : null,
+        listingAnalytics?.growth_available ? "growth history" : null,
+        listingAnalytics?.network?.related_communities?.length
+            ? "related communities"
+            : null,
+    ].filter(Boolean)
+
+    const description = `View ${name} Telegram statistics including ${members.toLocaleString()} members${growthPhrase}${
+        analyticsBits.length ? `, ${analyticsBits.join(", ")}` : ""
+    } and channel information.`
 
     const canonical = `https://telehub.to/channel/${canonicalSlug}`
 
@@ -410,12 +423,23 @@ export default async function ChannelPage({ params }: PageProps) {
     const isNsfw = Boolean(listing.is_nsfw)
 
     const canonicalSlug = String(listing.short_invite || slug)
-    const pilotAnalytics = await getPilotAnalytics(canonicalSlug)
+    const listingAnalytics = await getListingAnalytics(canonicalSlug)
     const joinUrl =
         listing.telegram_link ||
         (username
             ? `https://t.me/${username.replace(/^@/, "")}`
             : "#")
+
+    const hasActivity = Boolean(listingAnalytics?.activity?.available)
+    const hasGrowth =
+        Boolean(listingAnalytics?.growth_available) &&
+        (listingAnalytics?.member_history?.length || 0) >= 2
+    const hasNetwork = Boolean(listingAnalytics?.network?.available)
+    const hasRelated =
+        (listingAnalytics?.network?.related_communities?.length || 0) > 0
+    const hasRecentPosts = (listingAnalytics?.recent_posts?.length || 0) > 0
+    const hasAnyAnalytics =
+        hasActivity || hasGrowth || hasNetwork || hasRelated || hasRecentPosts
 
     const backgroundStyle = listing.image_url
         ? {
@@ -552,7 +576,7 @@ export default async function ChannelPage({ params }: PageProps) {
                         </article>
                     </section>
 
-                    {pilotAnalytics ? (
+                    {listingAnalytics && hasAnyAnalytics ? (
                         <section
                             className="detailsCard"
                             style={{ display: "grid", gap: 24 }}
@@ -561,11 +585,12 @@ export default async function ChannelPage({ params }: PageProps) {
                                 <h2 style={{ marginBottom: 6 }}>Telegram statistics</h2>
                                 <p style={{ margin: 0, color: "#64748b" }}>
                                     Statistics updated {formatUpdatedDate(
-                                        pilotAnalytics.statistics_updated_at
+                                        listingAnalytics.statistics_updated_at
                                     )}
                                 </p>
                             </div>
 
+                            {hasActivity ? (
                             <div>
                                 <h3 style={{ marginBottom: 12 }}>Activity</h3>
                                 <div
@@ -579,25 +604,25 @@ export default async function ChannelPage({ params }: PageProps) {
                                     <AnalyticsStat
                                         label="Last public post"
                                         value={formatRelativeTime(
-                                            pilotAnalytics.activity?.latest_post_at
+                                            listingAnalytics.activity?.latest_post_at
                                         )}
                                     />
                                     <AnalyticsStat
                                         label="Recent posts (7d)"
                                         value={
-                                            pilotAnalytics.activity
+                                            listingAnalytics.activity
                                                 ?.posts_observed_last_7_days ?? "—"
                                         }
                                     />
                                     <AnalyticsStat
                                         label="Average posts/day"
                                         value={
-                                            pilotAnalytics.activity
+                                            listingAnalytics.activity
                                                 ?.average_observed_posts_per_day ?? "—"
                                         }
                                     />
                                 </div>
-                                {pilotAnalytics.activity?.warning ? (
+                                {listingAnalytics.activity?.warning ? (
                                     <p
                                         style={{
                                             margin: "10px 0 0",
@@ -605,15 +630,17 @@ export default async function ChannelPage({ params }: PageProps) {
                                             color: "#64748b",
                                         }}
                                     >
-                                        {pilotAnalytics.activity.warning}
+                                        {listingAnalytics.activity.warning}
                                     </p>
                                 ) : null}
                             </div>
+                            ) : null}
 
+                            {hasGrowth ? (
                             <div>
                                 <h3 style={{ marginBottom: 12 }}>Member growth</h3>
                                 <MemberGrowthChart
-                                    history={pilotAnalytics.member_history || []}
+                                    history={listingAnalytics.member_history || []}
                                 />
                                 <div
                                     style={{
@@ -627,24 +654,26 @@ export default async function ChannelPage({ params }: PageProps) {
                                     <AnalyticsStat
                                         label="24 hours"
                                         value={growthText(
-                                            pilotAnalytics.growth?.day_1
+                                            listingAnalytics.growth?.day_1
                                         )}
                                     />
                                     <AnalyticsStat
                                         label="7 days"
                                         value={growthText(
-                                            pilotAnalytics.growth?.day_7
+                                            listingAnalytics.growth?.day_7
                                         )}
                                     />
                                     <AnalyticsStat
                                         label="30 days"
                                         value={growthText(
-                                            pilotAnalytics.growth?.day_30
+                                            listingAnalytics.growth?.day_30
                                         )}
                                     />
                                 </div>
                             </div>
+                            ) : null}
 
+                            {hasNetwork ? (
                             <div>
                                 <h3 style={{ marginBottom: 12 }}>
                                     Telegram network
@@ -660,28 +689,29 @@ export default async function ChannelPage({ params }: PageProps) {
                                     <AnalyticsStat
                                         label="Linked communities"
                                         value={
-                                            pilotAnalytics.network
+                                            listingAnalytics.network
                                                 ?.linked_communities ?? 0
                                         }
                                     />
                                     <AnalyticsStat
                                         label="Channels linking here"
                                         value={
-                                            pilotAnalytics.network
+                                            listingAnalytics.network
                                                 ?.channels_linking_here ?? 0
                                         }
                                     />
                                 </div>
                             </div>
+                            ) : null}
 
-                            {pilotAnalytics.network?.related_communities?.length ? (
+                            {hasRelated ? (
                                 <div>
                                     <h3 style={{ marginBottom: 12 }}>
                                         Related communities
                                     </h3>
 
                                     <div className="relatedCommunityGrid">
-                                        {pilotAnalytics.network.related_communities.map(
+                                        {(listingAnalytics.network?.related_communities || []).map(
                                             (related) => (
                                                 <a
                                                     key={related.id}
@@ -726,14 +756,14 @@ export default async function ChannelPage({ params }: PageProps) {
                                 </div>
                             ) : null}
 
-                            {pilotAnalytics.recent_posts?.length ? (
+                            {hasRecentPosts ? (
                                 <div>
                                     <h3 style={{ marginBottom: 12 }}>
                                         Recent public posts
                                     </h3>
 
                                     <div className="telegramPostGrid">
-                                        {pilotAnalytics.recent_posts.map(
+                                        {(listingAnalytics.recent_posts || []).map(
                                             (rawPost, index) => {
                                                 const postText = String(
                                                     rawPost || ""
