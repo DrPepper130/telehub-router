@@ -751,9 +751,9 @@ export default async function ChannelPage({ params }: PageProps) {
                                                     >
                                                         <div className="telegramPostHeader">
                                                             <div className="telegramPostIdentity">
-                                                                {iconUrl ? (
+                                                                {listing.icon_url ? (
                                                                     <img
-                                                                        src={iconUrl}
+                                                                        src={listing.icon_url}
                                                                         alt=""
                                                                         width={40}
                                                                         height={40}
