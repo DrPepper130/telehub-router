@@ -86,16 +86,19 @@ type PilotAnalytics = {
             matching_tag_count?: number
         }>
     }
-    recent_posts?: Array<{
-        id?: string | null
-        text: string
-        posted_at?: string | null
-        views?: number | null
-        views_text?: string | null
-        post_url?: string | null
-        media_url?: string | null
-        username?: string | null
-    }>
+    recent_posts?: Array<
+        | string
+        | {
+              id?: string | null
+              text?: string | null
+              posted_at?: string | null
+              views?: number | null
+              views_text?: string | null
+              post_url?: string | null
+              media_url?: string | null
+              username?: string | null
+          }
+    >
 }
 
 type GrowthStat = {
@@ -754,24 +757,72 @@ export default async function ChannelPage({ params }: PageProps) {
                                     </h3>
                                     <div className="analyticsPostGrid">
                                         {pilotAnalytics.recent_posts.map(
-                                            (post, index) => {
+                                            (rawPost, index) => {
+                                                // Keep the page resilient during backend/frontend deploys:
+                                                // older analytics payloads returned strings, while the
+                                                // new endpoint returns structured post objects.
+                                                const post =
+                                                    typeof rawPost === "string"
+                                                        ? {
+                                                              id: `legacy-${index + 1}`,
+                                                              text: rawPost,
+                                                              posted_at: null,
+                                                              views: null,
+                                                              views_text: null,
+                                                              post_url: null,
+                                                              media_url: null,
+                                                          }
+                                                        : rawPost || {}
+
+                                                const postText = String(
+                                                    post.text || ""
+                                                ).trim()
+                                                if (!postText) return null
+
                                                 const postDate = formatPostDate(
                                                     post.posted_at
                                                 )
                                                 const views =
                                                     post.views !== null &&
-                                                    post.views !== undefined
-                                                        ? compactNumber(post.views)
+                                                    post.views !== undefined &&
+                                                    Number.isFinite(
+                                                        Number(post.views)
+                                                    )
+                                                        ? compactNumber(
+                                                              Number(post.views)
+                                                          )
                                                         : post.views_text
+                                                          ? String(post.views_text)
+                                                          : null
+
+                                                const safePostUrl =
+                                                    typeof post.post_url ===
+                                                        "string" &&
+                                                    /^https?:\/\//i.test(
+                                                        post.post_url
+                                                    )
+                                                        ? post.post_url
+                                                        : null
+
+                                                const safeMediaUrl =
+                                                    typeof post.media_url ===
+                                                        "string" &&
+                                                    /^https?:\/\//i.test(
+                                                        post.media_url
+                                                    )
+                                                        ? post.media_url
+                                                        : null
 
                                                 return (
                                                     <article
                                                         key={
-                                                            post.id ||
-                                                            `${index}-${post.text.slice(
-                                                                0,
-                                                                24
-                                                            )}`
+                                                            String(
+                                                                post.id ||
+                                                                    `${index}-${postText.slice(
+                                                                        0,
+                                                                        24
+                                                                    )}`
+                                                            )
                                                         }
                                                         className="analyticsTelegramPost"
                                                     >
@@ -799,9 +850,9 @@ export default async function ChannelPage({ params }: PageProps) {
                                                                     ) : null}
                                                                 </div>
                                                             </div>
-                                                            {post.post_url ? (
+                                                            {safePostUrl ? (
                                                                 <a
-                                                                    href={post.post_url}
+                                                                    href={safePostUrl}
                                                                     target="_blank"
                                                                     rel="noopener noreferrer"
                                                                     className="analyticsTelegramPostOpen"
@@ -814,14 +865,14 @@ export default async function ChannelPage({ params }: PageProps) {
                                                         </div>
 
                                                         <div className="analyticsTelegramPostBody">
-                                                            {post.media_url ? (
+                                                            {safeMediaUrl ? (
                                                                 <img
-                                                                    src={post.media_url}
+                                                                    src={safeMediaUrl}
                                                                     alt=""
                                                                     className="analyticsTelegramPostMedia"
                                                                 />
                                                             ) : null}
-                                                            <p>{post.text}</p>
+                                                            <p>{postText}</p>
                                                         </div>
 
                                                         <div className="analyticsTelegramPostFooter">
@@ -834,9 +885,9 @@ export default async function ChannelPage({ params }: PageProps) {
                                                                         ◉ {views}
                                                                     </span>
                                                                 ) : null}
-                                                                {post.post_url ? (
+                                                                {safePostUrl ? (
                                                                     <a
-                                                                        href={post.post_url}
+                                                                        href={safePostUrl}
                                                                         target="_blank"
                                                                         rel="noopener noreferrer"
                                                                     >
