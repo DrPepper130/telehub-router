@@ -342,7 +342,7 @@ export async function generateMetadata({
 
     const title =
         canonicalSlug.toLowerCase() === ANALYTICS_PILOT_SLUG
-            ? `${name} Telegram ${listingType === "group" ? "Group " : ""}– Members, Growth & Statistics | TeleHub`
+            ? `${name} Telegram ${listingType === "group" ? "Group " : ""}– Members, Growth & Statistics`
             : getSeoTitle(listing)
 
     const growth30 = pilotAnalytics?.growth?.day_30
