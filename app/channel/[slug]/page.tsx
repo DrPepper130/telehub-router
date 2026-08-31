@@ -82,6 +82,8 @@ type PilotAnalytics = {
             member_count?: number
             icon_url?: string | null
             listing_type?: string | null
+            matching_tags?: string[]
+            matching_tag_count?: number
         }>
     }
     recent_posts?: string[]
@@ -507,12 +509,6 @@ export default async function ChannelPage({ params }: PageProps) {
                             >
                                 <span>MEMBERS</span>
                                 <strong>{compactNumber(members)}</strong>
-                                {pilotAnalytics?.growth?.day_30?.change !== null &&
-                                pilotAnalytics?.growth?.day_30?.change !== undefined ? (
-                                    <small style={{ display: "block", marginTop: 4 }}>
-                                        {growthText(pilotAnalytics.growth.day_30)} in 30 days
-                                    </small>
-                                ) : null}
                             </div>
 
                             <ListingActions
