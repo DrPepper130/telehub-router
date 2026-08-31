@@ -86,7 +86,16 @@ type PilotAnalytics = {
             matching_tag_count?: number
         }>
     }
-    recent_posts?: string[]
+    recent_posts?: Array<{
+        id?: string | null
+        text: string
+        posted_at?: string | null
+        views?: number | null
+        views_text?: string | null
+        post_url?: string | null
+        media_url?: string | null
+        username?: string | null
+    }>
 }
 
 type GrowthStat = {
@@ -170,6 +179,20 @@ function formatRelativeTime(value: string | null | undefined) {
 
     const days = Math.floor(hours / 24)
     return `${days} day${days === 1 ? "" : "s"} ago`
+}
+
+
+function formatPostDate(value: string | null | undefined) {
+    if (!value) return null
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return null
+
+    return date.toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+    })
 }
 
 function MemberGrowthChart({
@@ -679,60 +702,38 @@ export default async function ChannelPage({ params }: PageProps) {
                                     <h3 style={{ marginBottom: 12 }}>
                                         Related communities
                                     </h3>
-                                    <div
-                                        style={{
-                                            display: "grid",
-                                            gridTemplateColumns:
-                                                "repeat(auto-fit, minmax(210px, 1fr))",
-                                            gap: 12,
-                                        }}
-                                    >
+                                    <div className="analyticsRelatedGrid">
                                         {pilotAnalytics.network.related_communities.map(
                                             (related) => (
                                                 <a
                                                     key={related.id}
                                                     href={`/channel/${related.short_invite}`}
-                                                    style={{
-                                                        display: "flex",
-                                                        alignItems: "center",
-                                                        gap: 12,
-                                                        padding: 14,
-                                                        borderRadius: 14,
-                                                        border:
-                                                            "1px solid rgba(15, 23, 42, 0.1)",
-                                                        background:
-                                                            "rgba(255,255,255,0.68)",
-                                                        textDecoration: "none",
-                                                        color: "inherit",
-                                                    }}
+                                                    className="analyticsRelatedCard"
                                                 >
                                                     {related.icon_url ? (
                                                         <img
                                                             src={related.icon_url}
                                                             alt=""
-                                                            width={42}
-                                                            height={42}
-                                                            style={{
-                                                                borderRadius: 12,
-                                                                objectFit: "cover",
-                                                            }}
+                                                            width={44}
+                                                            height={44}
+                                                            className="analyticsRelatedIcon"
                                                         />
-                                                    ) : null}
-                                                    <span>
-                                                        <strong
-                                                            style={{
-                                                                display: "block",
-                                                            }}
-                                                        >
+                                                    ) : (
+                                                        <div className="analyticsRelatedIcon analyticsRelatedIconFallback">
+                                                            {(related.name ||
+                                                                related.username ||
+                                                                "T")
+                                                                .slice(0, 1)
+                                                                .toUpperCase()}
+                                                        </div>
+                                                    )}
+                                                    <span className="analyticsRelatedCopy">
+                                                        <strong>
                                                             {related.name ||
                                                                 related.username ||
                                                                 "Telegram community"}
                                                         </strong>
-                                                        <small
-                                                            style={{
-                                                                color: "#64748b",
-                                                            }}
-                                                        >
+                                                        <small>
                                                             {compactNumber(
                                                                 related.member_count
                                                             )}{" "}
@@ -751,32 +752,320 @@ export default async function ChannelPage({ params }: PageProps) {
                                     <h3 style={{ marginBottom: 12 }}>
                                         Recent public posts
                                     </h3>
-                                    <div style={{ display: "grid", gap: 10 }}>
+                                    <div className="analyticsPostGrid">
                                         {pilotAnalytics.recent_posts.map(
-                                            (post, index) => (
-                                                <div
-                                                    key={`${index}-${post.slice(
-                                                        0,
-                                                        24
-                                                    )}`}
-                                                    style={{
-                                                        padding: "14px 16px",
-                                                        borderRadius: 14,
-                                                        border:
-                                                            "1px solid rgba(15, 23, 42, 0.1)",
-                                                        background:
-                                                            "rgba(255,255,255,0.68)",
-                                                    }}
-                                                >
-                                                    {post.length > 260
-                                                        ? `${post.slice(0, 260)}…`
-                                                        : post}
-                                                </div>
-                                            )
+                                            (post, index) => {
+                                                const postDate = formatPostDate(
+                                                    post.posted_at
+                                                )
+                                                const views =
+                                                    post.views !== null &&
+                                                    post.views !== undefined
+                                                        ? compactNumber(post.views)
+                                                        : post.views_text
+
+                                                return (
+                                                    <article
+                                                        key={
+                                                            post.id ||
+                                                            `${index}-${post.text.slice(
+                                                                0,
+                                                                24
+                                                            )}`
+                                                        }
+                                                        className="analyticsTelegramPost"
+                                                    >
+                                                        <div className="analyticsTelegramPostHeader">
+                                                            <div className="analyticsTelegramPostIdentity">
+                                                                {iconUrl ? (
+                                                                    <img
+                                                                        src={iconUrl}
+                                                                        alt=""
+                                                                        width={38}
+                                                                        height={38}
+                                                                        className="analyticsTelegramPostAvatar"
+                                                                    />
+                                                                ) : null}
+                                                                <div className="analyticsTelegramPostIdentityText">
+                                                                    <strong>{name}</strong>
+                                                                    {username ? (
+                                                                        <span>
+                                                                            {username.startsWith(
+                                                                                "@"
+                                                                            )
+                                                                                ? username
+                                                                                : `@${username}`}
+                                                                        </span>
+                                                                    ) : null}
+                                                                </div>
+                                                            </div>
+                                                            {post.post_url ? (
+                                                                <a
+                                                                    href={post.post_url}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="analyticsTelegramPostOpen"
+                                                                    aria-label="Open post on Telegram"
+                                                                    title="Open post on Telegram"
+                                                                >
+                                                                    ↗
+                                                                </a>
+                                                            ) : null}
+                                                        </div>
+
+                                                        <div className="analyticsTelegramPostBody">
+                                                            {post.media_url ? (
+                                                                <img
+                                                                    src={post.media_url}
+                                                                    alt=""
+                                                                    className="analyticsTelegramPostMedia"
+                                                                />
+                                                            ) : null}
+                                                            <p>{post.text}</p>
+                                                        </div>
+
+                                                        <div className="analyticsTelegramPostFooter">
+                                                            <span>
+                                                                {postDate || "Recent post"}
+                                                            </span>
+                                                            <span className="analyticsTelegramPostMetrics">
+                                                                {views ? (
+                                                                    <span>
+                                                                        ◉ {views}
+                                                                    </span>
+                                                                ) : null}
+                                                                {post.post_url ? (
+                                                                    <a
+                                                                        href={post.post_url}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                    >
+                                                                        View post
+                                                                    </a>
+                                                                ) : null}
+                                                            </span>
+                                                        </div>
+                                                    </article>
+                                                )
+                                            }
                                         )}
                                     </div>
                                 </div>
                             ) : null}
+
+                            <style>{`
+                                .analyticsRelatedGrid {
+                                    display: grid;
+                                    grid-template-columns: repeat(4, minmax(0, 1fr));
+                                    gap: 12px;
+                                }
+
+                                .analyticsRelatedCard {
+                                    min-width: 0;
+                                    min-height: 92px;
+                                    display: flex;
+                                    align-items: center;
+                                    gap: 12px;
+                                    padding: 14px;
+                                    border-radius: 14px;
+                                    border: 1px solid rgba(15, 23, 42, 0.1);
+                                    background: rgba(255, 255, 255, 0.72);
+                                    text-decoration: none;
+                                    color: inherit;
+                                    box-sizing: border-box;
+                                    overflow: hidden;
+                                }
+
+                                .analyticsRelatedIcon {
+                                    width: 44px;
+                                    height: 44px;
+                                    min-width: 44px;
+                                    flex: 0 0 44px;
+                                    border-radius: 12px;
+                                    object-fit: cover;
+                                }
+
+                                .analyticsRelatedIconFallback {
+                                    display: grid;
+                                    place-items: center;
+                                    background: rgba(44, 116, 244, 0.1);
+                                    color: #2c74f4;
+                                    font-weight: 800;
+                                }
+
+                                .analyticsRelatedCopy {
+                                    min-width: 0;
+                                    display: block;
+                                }
+
+                                .analyticsRelatedCopy strong {
+                                    display: -webkit-box;
+                                    min-width: 0;
+                                    overflow: hidden;
+                                    -webkit-box-orient: vertical;
+                                    -webkit-line-clamp: 2;
+                                    line-clamp: 2;
+                                    line-height: 1.2;
+                                    overflow-wrap: anywhere;
+                                }
+
+                                .analyticsRelatedCopy small {
+                                    display: block;
+                                    margin-top: 5px;
+                                    color: #64748b;
+                                    white-space: nowrap;
+                                }
+
+                                .analyticsPostGrid {
+                                    display: grid;
+                                    grid-template-columns: repeat(3, minmax(0, 1fr));
+                                    gap: 12px;
+                                }
+
+                                .analyticsTelegramPost {
+                                    min-width: 0;
+                                    display: flex;
+                                    flex-direction: column;
+                                    overflow: hidden;
+                                    border-radius: 16px;
+                                    border: 1px solid rgba(15, 23, 42, 0.11);
+                                    background: rgba(255, 255, 255, 0.8);
+                                    box-shadow: 0 7px 22px rgba(18, 42, 82, 0.04);
+                                }
+
+                                .analyticsTelegramPostHeader {
+                                    display: flex;
+                                    align-items: center;
+                                    justify-content: space-between;
+                                    gap: 12px;
+                                    padding: 14px 15px 12px;
+                                    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+                                }
+
+                                .analyticsTelegramPostIdentity {
+                                    min-width: 0;
+                                    display: flex;
+                                    align-items: center;
+                                    gap: 10px;
+                                }
+
+                                .analyticsTelegramPostAvatar {
+                                    width: 38px;
+                                    height: 38px;
+                                    min-width: 38px;
+                                    border-radius: 999px;
+                                    object-fit: cover;
+                                }
+
+                                .analyticsTelegramPostIdentityText {
+                                    min-width: 0;
+                                    display: flex;
+                                    flex-direction: column;
+                                    gap: 2px;
+                                }
+
+                                .analyticsTelegramPostIdentityText strong,
+                                .analyticsTelegramPostIdentityText span {
+                                    overflow: hidden;
+                                    text-overflow: ellipsis;
+                                    white-space: nowrap;
+                                }
+
+                                .analyticsTelegramPostIdentityText span {
+                                    color: #64748b;
+                                    font-size: 12px;
+                                }
+
+                                .analyticsTelegramPostOpen {
+                                    flex: 0 0 auto;
+                                    width: 32px;
+                                    height: 32px;
+                                    display: grid;
+                                    place-items: center;
+                                    border-radius: 10px;
+                                    text-decoration: none;
+                                    color: #26477d;
+                                    background: rgba(44, 116, 244, 0.07);
+                                    font-weight: 800;
+                                }
+
+                                .analyticsTelegramPostBody {
+                                    flex: 1;
+                                    min-width: 0;
+                                    padding: 14px 15px;
+                                }
+
+                                .analyticsTelegramPostMedia {
+                                    width: 100%;
+                                    max-height: 190px;
+                                    display: block;
+                                    margin: 0 0 12px;
+                                    border-radius: 12px;
+                                    object-fit: cover;
+                                }
+
+                                .analyticsTelegramPostBody p {
+                                    margin: 0;
+                                    line-height: 1.5;
+                                    white-space: pre-wrap;
+                                    overflow-wrap: anywhere;
+                                    display: -webkit-box;
+                                    -webkit-box-orient: vertical;
+                                    -webkit-line-clamp: 7;
+                                    line-clamp: 7;
+                                    overflow: hidden;
+                                }
+
+                                .analyticsTelegramPostFooter {
+                                    display: flex;
+                                    align-items: center;
+                                    justify-content: space-between;
+                                    gap: 12px;
+                                    padding: 11px 15px 13px;
+                                    border-top: 1px solid rgba(15, 23, 42, 0.08);
+                                    color: #64748b;
+                                    font-size: 12px;
+                                }
+
+                                .analyticsTelegramPostMetrics {
+                                    display: flex;
+                                    align-items: center;
+                                    justify-content: flex-end;
+                                    gap: 10px;
+                                    white-space: nowrap;
+                                }
+
+                                .analyticsTelegramPostMetrics a {
+                                    color: #2c74f4;
+                                    text-decoration: none;
+                                    font-weight: 700;
+                                }
+
+                                @media (max-width: 900px) {
+                                    .analyticsRelatedGrid {
+                                        grid-template-columns: repeat(2, minmax(0, 1fr));
+                                    }
+
+                                    .analyticsPostGrid {
+                                        grid-template-columns: 1fr;
+                                    }
+                                }
+
+                                @media (max-width: 560px) {
+                                    .analyticsRelatedGrid {
+                                        grid-template-columns: 1fr;
+                                    }
+
+                                    .analyticsRelatedCard {
+                                        min-height: 76px;
+                                    }
+
+                                    .analyticsTelegramPostFooter {
+                                        align-items: flex-start;
+                                        flex-direction: column;
+                                    }
+                                }
+                            `}</style>
                         </section>
                     ) : null}
 
