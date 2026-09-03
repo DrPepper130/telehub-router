@@ -37,6 +37,8 @@ type ListingRow = {
     updated_at?: string | null
     last_synced_at?: string | null
     created_at?: string | null
+    listing_type?: string | null
+    language_code?: string | null
 }
 
 // These Framer routes are utility, auth, redirect, or non-canonical shell routes.
@@ -138,8 +140,12 @@ async function getCanonicalFramerEntries(): Promise<SitemapEntry[]> {
     }
 }
 
-async function getApprovedListingEntries(): Promise<SitemapEntry[]> {
+async function getApprovedListingEntries(): Promise<{
+    listings: SitemapEntry[]
+    languageLandings: SitemapEntry[]
+}> {
     const entries: SitemapEntry[] = []
+    const languageTypes = new Map<string, Set<string>>()
 
     for (let from = 0; ; from += SUPABASE_BATCH_SIZE) {
         const to = from + SUPABASE_BATCH_SIZE - 1
@@ -147,7 +153,7 @@ async function getApprovedListingEntries(): Promise<SitemapEntry[]> {
         const { data, error } = await supabase
             .from("channel_listings")
             .select(
-                "id, short_invite, slug, updated_at, last_synced_at, created_at"
+                "id, short_invite, slug, updated_at, last_synced_at, created_at, listing_type, language_code"
             )
             .eq("status", "approved")
             .or("is_banned.is.null,is_banned.eq.false")
@@ -176,12 +182,41 @@ async function getApprovedListingEntries(): Promise<SitemapEntry[]> {
                     listing.created_at ||
                     null,
             })
+
+            const languageCode = String(
+                listing.language_code || ""
+            ).trim().toLowerCase()
+            const listingType = String(
+                listing.listing_type || "channel"
+            ).toLowerCase()
+
+            if (/^[a-z]{2,3}$/.test(languageCode)) {
+                const types =
+                    languageTypes.get(languageCode) || new Set<string>()
+                types.add(
+                    listingType === "group" ? "groups" : "channels"
+                )
+                languageTypes.set(languageCode, types)
+            }
         }
 
         if (rows.length < SUPABASE_BATCH_SIZE) break
     }
 
-    return entries
+    const languageLandings: SitemapEntry[] = []
+
+    for (const [languageCode, types] of languageTypes.entries()) {
+        for (const type of types) {
+            languageLandings.push({
+                url: `${SITE_ORIGIN}/${type}/${encodeURIComponent(languageCode)}`,
+            })
+        }
+    }
+
+    return {
+        listings: entries,
+        languageLandings,
+    }
 }
 
 function dedupeEntries(entries: SitemapEntry[]) {
@@ -221,12 +256,18 @@ function renderSitemap(entries: SitemapEntry[]) {
 
 export async function GET() {
     try {
-        const [framerEntries, listingEntries] = await Promise.all([
+        const [framerEntries, listingResult] = await Promise.all([
             getCanonicalFramerEntries(),
             getApprovedListingEntries(),
         ])
 
-        const entries = dedupeEntries([...framerEntries, ...listingEntries])
+        const listingEntries = listingResult.listings
+        const languageLandingEntries = listingResult.languageLandings
+        const entries = dedupeEntries([
+            ...framerEntries,
+            ...languageLandingEntries,
+            ...listingEntries,
+        ])
         const xml = renderSitemap(entries)
 
         return new Response(xml, {
@@ -237,6 +278,9 @@ export async function GET() {
                     "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400",
                 "X-TeleHub-Sitemap-Urls": String(entries.length),
                 "X-TeleHub-Listing-Urls": String(listingEntries.length),
+                "X-TeleHub-Language-Landings": String(
+                    languageLandingEntries.length
+                ),
             },
         })
     } catch (error) {
