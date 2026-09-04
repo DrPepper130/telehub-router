@@ -27,16 +27,12 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
 type SitemapEntry = {
     url: string
-    lastModified?: string | null
 }
 
 type ListingRow = {
     id: string
     short_invite?: string | null
     slug?: string | null
-    updated_at?: string | null
-    last_synced_at?: string | null
-    created_at?: string | null
     listing_type?: string | null
     language_code?: string | null
 }
@@ -152,9 +148,7 @@ async function getApprovedListingEntries(): Promise<{
 
         const { data, error } = await supabase
             .from("channel_listings")
-            .select(
-                "id, short_invite, slug, updated_at, last_synced_at, created_at, listing_type, language_code"
-            )
+            .select("id, short_invite, slug, listing_type, language_code")
             .eq("status", "approved")
             .or("is_banned.is.null,is_banned.eq.false")
             .not("short_invite", "is", null)
@@ -176,16 +170,12 @@ async function getApprovedListingEntries(): Promise<{
 
             entries.push({
                 url: `${SITE_ORIGIN}/channel/${encodeURIComponent(shortInvite)}`,
-                lastModified:
-                    listing.updated_at ||
-                    listing.last_synced_at ||
-                    listing.created_at ||
-                    null,
             })
 
             const languageCode = String(
                 listing.language_code || ""
             ).trim().toLowerCase()
+
             const listingType = String(
                 listing.listing_type || "channel"
             ).toLowerCase()
@@ -193,9 +183,11 @@ async function getApprovedListingEntries(): Promise<{
             if (/^[a-z]{2,3}$/.test(languageCode)) {
                 const types =
                     languageTypes.get(languageCode) || new Set<string>()
+
                 types.add(
                     listingType === "group" ? "groups" : "channels"
                 )
+
                 languageTypes.set(languageCode, types)
             }
         }
@@ -223,14 +215,7 @@ function dedupeEntries(entries: SitemapEntry[]) {
     const byUrl = new Map<string, SitemapEntry>()
 
     for (const entry of entries) {
-        const existing = byUrl.get(entry.url)
-
-        if (!existing) {
-            byUrl.set(entry.url, entry)
-            continue
-        }
-
-        if (!existing.lastModified && entry.lastModified) {
+        if (!byUrl.has(entry.url)) {
             byUrl.set(entry.url, entry)
         }
     }
@@ -242,13 +227,10 @@ function dedupeEntries(entries: SitemapEntry[]) {
 
 function renderSitemap(entries: SitemapEntry[]) {
     const body = entries
-        .map((entry) => {
-            const lastModified = entry.lastModified
-                ? `\n    <lastmod>${escapeXml(new Date(entry.lastModified).toISOString())}</lastmod>`
-                : ""
-
-            return `  <url>\n    <loc>${escapeXml(entry.url)}</loc>${lastModified}\n  </url>`
-        })
+        .map(
+            (entry) =>
+                `  <url>\n    <loc>${escapeXml(entry.url)}</loc>\n  </url>`
+        )
         .join("\n")
 
     return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${body}\n</urlset>\n`
@@ -263,11 +245,13 @@ export async function GET() {
 
         const listingEntries = listingResult.listings
         const languageLandingEntries = listingResult.languageLandings
+
         const entries = dedupeEntries([
             ...framerEntries,
             ...languageLandingEntries,
             ...listingEntries,
         ])
+
         const xml = renderSitemap(entries)
 
         return new Response(xml, {
