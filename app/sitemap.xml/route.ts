@@ -1,284 +1,185 @@
-import { createClient } from "@supabase/supabase-js"
+import type { NextRequest } from "next/server"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 const SITE_ORIGIN = "https://telehub.to"
 const FRAMER_ORIGIN = "https://blessed-estimate-419559.framer.app"
-const SUPABASE_BATCH_SIZE = 1000
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+function upstreamPathFor(pathname: string) {
+    const match = pathname.match(/^\/(channels|groups|all)\/([a-z]{2,3}|mixed)\/?$/i)
 
-if (!supabaseUrl) {
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL")
-}
-
-if (!supabaseAnonKey) {
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY")
-}
-
-const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-    },
-})
-
-type SitemapEntry = {
-    url: string
-}
-
-type ListingRow = {
-    id: string
-    short_invite?: string | null
-    slug?: string | null
-    listing_type?: string | null
-    language_code?: string | null
-}
-
-// These Framer routes are utility, auth, redirect, or non-canonical shell routes.
-// They should not be advertised as indexable pages in TeleHub's sitemap.
-const EXCLUDED_FRAMER_PATHS = new Set([
-    "/admin",
-    "/dashboard",
-    "/login",
-    "/welcome",
-    "/go",
-    "/embed",
-    "/channel",
-    "/report",
-    "/upgrade",
-])
-
-function escapeXml(value: string) {
-    return value
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/\"/g, "&quot;")
-        .replace(/'/g, "&apos;")
-}
-
-function normalizePathname(pathname: string) {
-    if (!pathname || pathname === "/") return "/"
-    return `/${pathname.replace(/^\/+|\/+$/g, "")}`
-}
-
-function shouldIncludeFramerPath(pathname: string) {
-    const normalized = normalizePathname(pathname)
-
-    if (EXCLUDED_FRAMER_PATHS.has(normalized)) return false
-    if (normalized.startsWith("/admin/")) return false
-    if (normalized.startsWith("/dashboard/")) return false
-    if (normalized.startsWith("/login/")) return false
-    if (normalized.startsWith("/go/")) return false
-    if (normalized.startsWith("/channel/")) return false
-
-    return true
-}
-
-async function getCanonicalFramerEntries(): Promise<SitemapEntry[]> {
-    try {
-        const response = await fetch(`${FRAMER_ORIGIN}/sitemap.xml`, {
-            headers: {
-                Accept: "application/xml,text/xml;q=0.9,*/*;q=0.8",
-                "User-Agent": "TeleHubSitemap/1.0 (+https://telehub.to)",
-            },
-            next: { revalidate: 3600 },
-        })
-
-        if (!response.ok) {
-            console.error(
-                "Framer sitemap fetch failed:",
-                response.status,
-                response.statusText
-            )
-            return []
-        }
-
-        const xml = await response.text()
-        const entries: SitemapEntry[] = []
-        const locPattern = /<loc>([\s\S]*?)<\/loc>/gi
-        let match: RegExpExecArray | null
-
-        while ((match = locPattern.exec(xml))) {
-            const rawLocation = String(match[1] || "")
-                .replace(/&amp;/g, "&")
-                .trim()
-
-            if (!rawLocation) continue
-
-            try {
-                const sourceUrl = new URL(rawLocation, FRAMER_ORIGIN)
-                const pathname = normalizePathname(sourceUrl.pathname)
-
-                if (!shouldIncludeFramerPath(pathname)) continue
-
-                entries.push({
-                    url:
-                        pathname === "/"
-                            ? `${SITE_ORIGIN}/`
-                            : `${SITE_ORIGIN}${pathname}`,
-                })
-            } catch (error) {
-                console.error("Could not parse Framer sitemap URL:", {
-                    rawLocation,
-                    error,
-                })
-            }
-        }
-
-        return entries
-    } catch (error) {
-        console.error("Framer sitemap fetch threw:", error)
-        return []
-    }
-}
-
-async function getApprovedListingEntries(): Promise<{
-    listings: SitemapEntry[]
-    languageLandings: SitemapEntry[]
-}> {
-    const entries: SitemapEntry[] = []
-    const languageTypes = new Map<string, Set<string>>()
-
-    for (let from = 0; ; from += SUPABASE_BATCH_SIZE) {
-        const to = from + SUPABASE_BATCH_SIZE - 1
-
-        const { data, error } = await supabase
-            .from("channel_listings")
-            .select("id, short_invite, slug, listing_type, language_code")
-            .eq("status", "approved")
-            .or("is_banned.is.null,is_banned.eq.false")
-            .not("short_invite", "is", null)
-            .order("id", { ascending: true })
-            .range(from, to)
-
-        if (error) {
-            throw new Error(`Supabase sitemap query failed: ${error.message}`)
-        }
-
-        const rows = (data || []) as ListingRow[]
-
-        for (const listing of rows) {
-            const shortInvite = String(listing.short_invite || "")
-                .trim()
-                .toLowerCase()
-
-            if (!shortInvite) continue
-
-            entries.push({
-                url: `${SITE_ORIGIN}/channel/${encodeURIComponent(shortInvite)}`,
-            })
-
-            const languageCode = String(
-                listing.language_code || ""
-            ).trim().toLowerCase()
-
-            const listingType = String(
-                listing.listing_type || "channel"
-            ).toLowerCase()
-
-            if (/^[a-z]{2,3}$/.test(languageCode)) {
-                const types =
-                    languageTypes.get(languageCode) || new Set<string>()
-
-                types.add(
-                    listingType === "group" ? "groups" : "channels"
-                )
-
-                languageTypes.set(languageCode, types)
-            }
-        }
-
-        if (rows.length < SUPABASE_BATCH_SIZE) break
+    if (match) {
+        return `/${match[1].toLowerCase()}`
     }
 
-    const languageLandings: SitemapEntry[] = []
-
-    for (const [languageCode, types] of languageTypes.entries()) {
-        for (const type of types) {
-            languageLandings.push({
-                url: `${SITE_ORIGIN}/${type}/${encodeURIComponent(languageCode)}`,
-            })
-        }
-    }
-
-    return {
-        listings: entries,
-        languageLandings,
-    }
+    return pathname || "/"
 }
 
-function dedupeEntries(entries: SitemapEntry[]) {
-    const byUrl = new Map<string, SitemapEntry>()
+function canonicalUrlFor(request: NextRequest) {
+    const pathname = request.nextUrl.pathname || "/"
+    return pathname === "/"
+        ? `${SITE_ORIGIN}/`
+        : `${SITE_ORIGIN}${pathname}`
+}
 
-    for (const entry of entries) {
-        if (!byUrl.has(entry.url)) {
-            byUrl.set(entry.url, entry)
-        }
+function replaceOrInsertCanonical(html: string, canonical: string) {
+    const canonicalTag = `<link rel="canonical" href="${canonical}">`
+    const canonicalPattern = /<link\b[^>]*\brel=["']canonical["'][^>]*>/i
+
+    if (canonicalPattern.test(html)) {
+        return html.replace(canonicalPattern, canonicalTag)
     }
 
-    return Array.from(byUrl.values()).sort((a, b) =>
-        a.url.localeCompare(b.url)
+    return html.replace(/<head(\s[^>]*)?>/i, (match) => `${match}\n${canonicalTag}`)
+}
+
+function replaceOrInsertMeta(
+    html: string,
+    attribute: "property" | "name",
+    key: string,
+    value: string
+) {
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    const pattern = new RegExp(
+        `<meta\\b[^>]*\\b${attribute}=["']${escapedKey}["'][^>]*>`,
+        "i"
     )
-}
+    const tag = `<meta ${attribute}="${key}" content="${value}">`
 
-function renderSitemap(entries: SitemapEntry[]) {
-    const body = entries
-        .map(
-            (entry) =>
-                `  <url>\n    <loc>${escapeXml(entry.url)}</loc>\n  </url>`
-        )
-        .join("\n")
-
-    return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${body}\n</urlset>\n`
-}
-
-export async function GET() {
-    try {
-        const [framerEntries, listingResult] = await Promise.all([
-            getCanonicalFramerEntries(),
-            getApprovedListingEntries(),
-        ])
-
-        const listingEntries = listingResult.listings
-        const languageLandingEntries = listingResult.languageLandings
-
-        const entries = dedupeEntries([
-            ...framerEntries,
-            ...languageLandingEntries,
-            ...listingEntries,
-        ])
-
-        const xml = renderSitemap(entries)
-
-        return new Response(xml, {
-            status: 200,
-            headers: {
-                "Content-Type": "application/xml; charset=utf-8",
-                "Cache-Control":
-                    "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400",
-                "X-TeleHub-Sitemap-Urls": String(entries.length),
-                "X-TeleHub-Listing-Urls": String(listingEntries.length),
-                "X-TeleHub-Language-Landings": String(
-                    languageLandingEntries.length
-                ),
-            },
-        })
-    } catch (error) {
-        console.error("TeleHub sitemap generation failed:", error)
-
-        return new Response(
-            `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>\n`,
-            {
-                status: 500,
-                headers: {
-                    "Content-Type": "application/xml; charset=utf-8",
-                    "Cache-Control": "no-store",
-                },
-            }
-        )
+    if (pattern.test(html)) {
+        return html.replace(pattern, tag)
     }
+
+    return html.replace(/<head(\s[^>]*)?>/i, (match) => `${match}\n${tag}`)
+}
+
+function rewriteFramerHtml(html: string, canonical: string) {
+    let output = html
+
+    output = replaceOrInsertCanonical(output, canonical)
+    output = replaceOrInsertMeta(output, "property", "og:url", canonical)
+    output = replaceOrInsertMeta(output, "property", "og:site_name", "TeleHub")
+
+    // Framer can emit absolute references to its preview hostname in JSON-LD or
+    // other SEO metadata. Rewrite only occurrences inside structured-data scripts
+    // so the public custom domain stays canonical without touching Framer assets.
+    output = output.replace(
+        /(<script\b[^>]*type=["']application\/ld\+json["'][^>]*>)([\s\S]*?)(<\/script>)/gi,
+        (_match, open, json, close) => {
+            const rewritten = String(json).replaceAll(FRAMER_ORIGIN, SITE_ORIGIN)
+            return `${open}${rewritten}${close}`
+        }
+    )
+
+    return output
+}
+
+function copyResponseHeaders(source: Headers) {
+    const headers = new Headers()
+
+    source.forEach((value, key) => {
+        const lower = key.toLowerCase()
+
+        if (
+            lower === "content-length" ||
+            lower === "content-encoding" ||
+            lower === "transfer-encoding" ||
+            lower === "connection"
+        ) {
+            return
+        }
+
+        if (lower === "location") {
+            headers.set(key, value.replace(FRAMER_ORIGIN, SITE_ORIGIN))
+            return
+        }
+
+        headers.set(key, value)
+    })
+
+    headers.set("x-telehub-framer-proxy", "canonical-rewrite-v1")
+    return headers
+}
+
+async function proxy(request: NextRequest) {
+    const incomingPath = request.nextUrl.pathname || "/"
+    const upstreamPath = upstreamPathFor(incomingPath)
+    const upstreamUrl = new URL(upstreamPath, FRAMER_ORIGIN)
+    upstreamUrl.search = request.nextUrl.search
+
+    const requestHeaders = new Headers(request.headers)
+    requestHeaders.set("x-forwarded-host", "telehub.to")
+    requestHeaders.set("x-forwarded-proto", "https")
+    requestHeaders.delete("content-length")
+
+    const hasBody = !["GET", "HEAD"].includes(request.method)
+    const requestBody = hasBody ? await request.arrayBuffer() : undefined
+
+    const upstream = await fetch(upstreamUrl, {
+        method: request.method,
+        headers: requestHeaders,
+        body: requestBody,
+        redirect: "manual",
+        cache: "no-store",
+    })
+
+    const headers = copyResponseHeaders(upstream.headers)
+
+    if (request.method === "HEAD") {
+        return new Response(null, {
+            status: upstream.status,
+            statusText: upstream.statusText,
+            headers,
+        })
+    }
+
+    const contentType = upstream.headers.get("content-type") || ""
+
+    if (contentType.toLowerCase().includes("text/html")) {
+        const html = await upstream.text()
+        const rewritten = rewriteFramerHtml(html, canonicalUrlFor(request))
+
+        headers.set("content-type", "text/html; charset=utf-8")
+
+        return new Response(rewritten, {
+            status: upstream.status,
+            statusText: upstream.statusText,
+            headers,
+        })
+    }
+
+    return new Response(upstream.body, {
+        status: upstream.status,
+        statusText: upstream.statusText,
+        headers,
+    })
+}
+
+export async function GET(request: NextRequest) {
+    return proxy(request)
+}
+
+export async function HEAD(request: NextRequest) {
+    return proxy(request)
+}
+
+export async function POST(request: NextRequest) {
+    return proxy(request)
+}
+
+export async function PUT(request: NextRequest) {
+    return proxy(request)
+}
+
+export async function PATCH(request: NextRequest) {
+    return proxy(request)
+}
+
+export async function DELETE(request: NextRequest) {
+    return proxy(request)
+}
+
+export async function OPTIONS(request: NextRequest) {
+    return proxy(request)
 }
