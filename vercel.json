@@ -1,21 +1,3 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "rewrites": [
-    {
-      "source": "/channels/:language",
-      "destination": "https://blessed-estimate-419559.framer.app/channels"
-    },
-    {
-      "source": "/groups/:language",
-      "destination": "https://blessed-estimate-419559.framer.app/groups"
-    },
-    {
-      "source": "/all/:language",
-      "destination": "https://blessed-estimate-419559.framer.app/all"
-    },
-    {
-      "source": "/((?!channel/|sitemap\\.xml$).*)",
-      "destination": "https://blessed-estimate-419559.framer.app/$1"
-    }
-  ]
+  "$schema": "https://openapi.vercel.sh/vercel.json"
 }
