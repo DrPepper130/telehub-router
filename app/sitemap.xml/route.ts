@@ -7,6 +7,11 @@ const SITE_ORIGIN = "https://telehub.to"
 const FRAMER_ORIGIN = "https://blessed-estimate-419559.framer.app"
 const SUPABASE_BATCH_SIZE = 1000
 
+// This was the date the listing-page rendering/performance architecture was
+// materially changed. Keep this date fixed. Only change it after another real,
+// sitewide listing-template change.
+const LISTING_TEMPLATE_LASTMOD = "2026-09-20"
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
@@ -27,6 +32,7 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
 type SitemapEntry = {
     url: string
+    lastmod?: string
 }
 
 type ListingRow = {
@@ -35,6 +41,7 @@ type ListingRow = {
     slug?: string | null
     listing_type?: string | null
     language_code?: string | null
+    created_at?: string | null
 }
 
 // These Framer routes are utility, auth, redirect, or non-canonical shell routes.
@@ -56,7 +63,7 @@ function escapeXml(value: string) {
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
-        .replace(/\"/g, "&quot;")
+        .replace(/"/g, "&quot;")
         .replace(/'/g, "&apos;")
 }
 
@@ -76,6 +83,28 @@ function shouldIncludeFramerPath(pathname: string) {
     if (normalized.startsWith("/channel/")) return false
 
     return true
+}
+
+function toSitemapDate(value: string | null | undefined) {
+    if (!value) return undefined
+
+    const date = new Date(value)
+
+    if (Number.isNaN(date.getTime())) {
+        return undefined
+    }
+
+    return date.toISOString().slice(0, 10)
+}
+
+function latestDate(
+    first: string | undefined,
+    second: string | undefined
+): string | undefined {
+    if (!first) return second
+    if (!second) return first
+
+    return first >= second ? first : second
 }
 
 async function getCanonicalFramerEntries(): Promise<SitemapEntry[]> {
@@ -148,7 +177,9 @@ async function getApprovedListingEntries(): Promise<{
 
         const { data, error } = await supabase
             .from("channel_listings")
-            .select("id, short_invite, slug, listing_type, language_code")
+            .select(
+                "id, short_invite, slug, listing_type, language_code, created_at"
+            )
             .eq("status", "approved")
             .or("is_banned.is.null,is_banned.eq.false")
             .not("short_invite", "is", null)
@@ -168,13 +199,24 @@ async function getApprovedListingEntries(): Promise<{
 
             if (!shortInvite) continue
 
+            // Existing listings were materially changed by the Sep 20 listing
+            // template/performance deployment. Newer listings use their actual
+            // creation date. This deliberately avoids channel_listings.updated_at
+            // because scraper/member refreshes can change that field frequently.
+            const listingCreatedDate = toSitemapDate(listing.created_at)
+            const listingLastmod = latestDate(
+                LISTING_TEMPLATE_LASTMOD,
+                listingCreatedDate
+            )
+
             entries.push({
                 url: `${SITE_ORIGIN}/channel/${encodeURIComponent(shortInvite)}`,
+                lastmod: listingLastmod,
             })
 
-            const languageCode = String(
-                listing.language_code || ""
-            ).trim().toLowerCase()
+            const languageCode = String(listing.language_code || "")
+                .trim()
+                .toLowerCase()
 
             const listingType = String(
                 listing.listing_type || "channel"
@@ -184,9 +226,7 @@ async function getApprovedListingEntries(): Promise<{
                 const types =
                     languageTypes.get(languageCode) || new Set<string>()
 
-                types.add(
-                    listingType === "group" ? "groups" : "channels"
-                )
+                types.add(listingType === "group" ? "groups" : "channels")
 
                 languageTypes.set(languageCode, types)
             }
@@ -199,6 +239,9 @@ async function getApprovedListingEntries(): Promise<{
 
     for (const [languageCode, types] of languageTypes.entries()) {
         for (const type of types) {
+            // We intentionally omit lastmod here. These landing pages are
+            // dynamic aggregates and we do not currently have a trustworthy
+            // "meaningful content changed" timestamp for them.
             languageLandings.push({
                 url: `${SITE_ORIGIN}/${type}/${encodeURIComponent(languageCode)}`,
             })
@@ -215,9 +258,19 @@ function dedupeEntries(entries: SitemapEntry[]) {
     const byUrl = new Map<string, SitemapEntry>()
 
     for (const entry of entries) {
-        if (!byUrl.has(entry.url)) {
+        const existing = byUrl.get(entry.url)
+
+        if (!existing) {
             byUrl.set(entry.url, entry)
+            continue
         }
+
+        // If duplicate sources produce the same canonical URL, keep the newest
+        // trustworthy lastmod rather than dropping it.
+        byUrl.set(entry.url, {
+            url: entry.url,
+            lastmod: latestDate(existing.lastmod, entry.lastmod),
+        })
     }
 
     return Array.from(byUrl.values()).sort((a, b) =>
@@ -227,10 +280,15 @@ function dedupeEntries(entries: SitemapEntry[]) {
 
 function renderSitemap(entries: SitemapEntry[]) {
     const body = entries
-        .map(
-            (entry) =>
-                `  <url>\n    <loc>${escapeXml(entry.url)}</loc>\n  </url>`
-        )
+        .map((entry) => {
+            const lastmodLine = entry.lastmod
+                ? `\n    <lastmod>${escapeXml(entry.lastmod)}</lastmod>`
+                : ""
+
+            return `  <url>\n    <loc>${escapeXml(
+                entry.url
+            )}</loc>${lastmodLine}\n  </url>`
+        })
         .join("\n")
 
     return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${body}\n</urlset>\n`
@@ -265,6 +323,7 @@ export async function GET() {
                 "X-TeleHub-Language-Landings": String(
                     languageLandingEntries.length
                 ),
+                "X-TeleHub-Listing-Lastmod": LISTING_TEMPLATE_LASTMOD,
             },
         })
     } catch (error) {
