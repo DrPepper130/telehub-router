@@ -6,8 +6,40 @@ export const dynamic = "force-dynamic"
 const SITE_ORIGIN = "https://telehub.to"
 const FRAMER_ORIGIN = "https://blessed-estimate-419559.framer.app"
 
+// Public Framer pages should be indexable on telehub.to.
+// These utility/private routes should remain excluded from search indexing.
+const NOINDEX_PATHS = new Set([
+    "/admin",
+    "/dashboard",
+    "/login",
+    "/welcome",
+    "/go",
+    "/embed",
+    "/report",
+    "/upgrade",
+])
+
+function normalizePathname(pathname: string) {
+    if (!pathname || pathname === "/") return "/"
+    return `/${pathname.replace(/^\/+|\/+$/g, "")}`
+}
+
+function shouldNoindexPath(pathname: string) {
+    const normalized = normalizePathname(pathname)
+
+    if (NOINDEX_PATHS.has(normalized)) return true
+    if (normalized.startsWith("/admin/")) return true
+    if (normalized.startsWith("/dashboard/")) return true
+    if (normalized.startsWith("/login/")) return true
+    if (normalized.startsWith("/go/")) return true
+
+    return false
+}
+
 function upstreamPathFor(pathname: string) {
-    const match = pathname.match(/^\/(channels|groups|all)\/([a-z]{2,3}|mixed)\/?$/i)
+    const match = pathname.match(
+        /^\/(channels|groups|all)\/([a-z]{2,3}|mixed)\/?$/i
+    )
 
     if (match) {
         return `/${match[1].toLowerCase()}`
@@ -18,6 +50,7 @@ function upstreamPathFor(pathname: string) {
 
 function canonicalUrlFor(request: NextRequest) {
     const pathname = request.nextUrl.pathname || "/"
+
     return pathname === "/"
         ? `${SITE_ORIGIN}/`
         : `${SITE_ORIGIN}${pathname}`
@@ -25,13 +58,17 @@ function canonicalUrlFor(request: NextRequest) {
 
 function replaceOrInsertCanonical(html: string, canonical: string) {
     const canonicalTag = `<link rel="canonical" href="${canonical}">`
-    const canonicalPattern = /<link\b[^>]*\brel=["']canonical["'][^>]*>/i
+    const canonicalPattern =
+        /<link\b[^>]*\brel=["']canonical["'][^>]*>/i
 
     if (canonicalPattern.test(html)) {
         return html.replace(canonicalPattern, canonicalTag)
     }
 
-    return html.replace(/<head(\s[^>]*)?>/i, (match) => `${match}\n${canonicalTag}`)
+    return html.replace(
+        /<head(\s[^>]*)?>/i,
+        (match) => `${match}\n${canonicalTag}`
+    )
 }
 
 function replaceOrInsertMeta(
@@ -51,15 +88,59 @@ function replaceOrInsertMeta(
         return html.replace(pattern, tag)
     }
 
-    return html.replace(/<head(\s[^>]*)?>/i, (match) => `${match}\n${tag}`)
+    return html.replace(
+        /<head(\s[^>]*)?>/i,
+        (match) => `${match}\n${tag}`
+    )
 }
 
-function rewriteFramerHtml(html: string, canonical: string) {
+function removeRobotsNoindexMeta(html: string) {
+    // Remove only robots/googlebot meta tags containing "noindex".
+    // Other robots directives are left untouched.
+    return html.replace(
+        /<meta\b[^>]*\bname=["'](?:robots|googlebot)["'][^>]*\bcontent=["'][^"']*\bnoindex\b[^"']*["'][^>]*>\s*/gi,
+        ""
+    )
+}
+
+function rewriteFramerHtml(
+    html: string,
+    canonical: string,
+    shouldNoindex: boolean
+) {
     let output = html
 
     output = replaceOrInsertCanonical(output, canonical)
     output = replaceOrInsertMeta(output, "property", "og:url", canonical)
-    output = replaceOrInsertMeta(output, "property", "og:site_name", "TeleHub")
+    output = replaceOrInsertMeta(
+        output,
+        "property",
+        "og:site_name",
+        "TeleHub"
+    )
+
+    if (shouldNoindex) {
+        output = replaceOrInsertMeta(
+            output,
+            "name",
+            "robots",
+            "noindex, nofollow"
+        )
+    } else {
+        // Framer preview domains may emit noindex metadata because the preview
+        // hostname itself should not rank. telehub.to is the public canonical
+        // domain, so remove inherited noindex directives here.
+        output = removeRobotsNoindexMeta(output)
+
+        // Add an explicit public robots directive so the intended behavior is
+        // clear in the final TeleHub HTML.
+        output = replaceOrInsertMeta(
+            output,
+            "name",
+            "robots",
+            "index, follow"
+        )
+    }
 
     // Framer can emit absolute references to its preview hostname in JSON-LD or
     // other SEO metadata. Rewrite only occurrences inside structured-data scripts
@@ -67,7 +148,10 @@ function rewriteFramerHtml(html: string, canonical: string) {
     output = output.replace(
         /(<script\b[^>]*type=["']application\/ld\+json["'][^>]*>)([\s\S]*?)(<\/script>)/gi,
         (_match, open, json, close) => {
-            const rewritten = String(json).replaceAll(FRAMER_ORIGIN, SITE_ORIGIN)
+            const rewritten = String(json).replaceAll(
+                FRAMER_ORIGIN,
+                SITE_ORIGIN
+            )
             return `${open}${rewritten}${close}`
         }
     )
@@ -75,7 +159,10 @@ function rewriteFramerHtml(html: string, canonical: string) {
     return output
 }
 
-function copyResponseHeaders(source: Headers) {
+function copyResponseHeaders(
+    source: Headers,
+    shouldNoindex: boolean
+) {
     const headers = new Headers()
 
     source.forEach((value, key) => {
@@ -90,20 +177,43 @@ function copyResponseHeaders(source: Headers) {
             return
         }
 
+        // CRITICAL SEO FIX:
+        // Never blindly forward Framer preview-host noindex headers to public
+        // telehub.to pages.
+        if (lower === "x-robots-tag") {
+            return
+        }
+
         if (lower === "location") {
-            headers.set(key, value.replace(FRAMER_ORIGIN, SITE_ORIGIN))
+            headers.set(
+                key,
+                value.replace(FRAMER_ORIGIN, SITE_ORIGIN)
+            )
             return
         }
 
         headers.set(key, value)
     })
 
-    headers.set("x-telehub-framer-proxy", "canonical-rewrite-v1")
+    if (shouldNoindex) {
+        headers.set("X-Robots-Tag", "noindex, nofollow")
+    } else {
+        headers.delete("X-Robots-Tag")
+    }
+
+    headers.set(
+        "x-telehub-framer-proxy",
+        "canonical-rewrite-v2-index-fix"
+    )
+
     return headers
 }
 
 async function proxy(request: NextRequest) {
     const incomingPath = request.nextUrl.pathname || "/"
+    const normalizedIncomingPath = normalizePathname(incomingPath)
+    const shouldNoindex = shouldNoindexPath(normalizedIncomingPath)
+
     const upstreamPath = upstreamPathFor(incomingPath)
     const upstreamUrl = new URL(upstreamPath, FRAMER_ORIGIN)
     upstreamUrl.search = request.nextUrl.search
@@ -114,7 +224,9 @@ async function proxy(request: NextRequest) {
     requestHeaders.delete("content-length")
 
     const hasBody = !["GET", "HEAD"].includes(request.method)
-    const requestBody = hasBody ? await request.arrayBuffer() : undefined
+    const requestBody = hasBody
+        ? await request.arrayBuffer()
+        : undefined
 
     const upstream = await fetch(upstreamUrl, {
         method: request.method,
@@ -124,7 +236,10 @@ async function proxy(request: NextRequest) {
         cache: "no-store",
     })
 
-    const headers = copyResponseHeaders(upstream.headers)
+    const headers = copyResponseHeaders(
+        upstream.headers,
+        shouldNoindex
+    )
 
     if (request.method === "HEAD") {
         return new Response(null, {
@@ -134,13 +249,21 @@ async function proxy(request: NextRequest) {
         })
     }
 
-    const contentType = upstream.headers.get("content-type") || ""
+    const contentType =
+        upstream.headers.get("content-type") || ""
 
     if (contentType.toLowerCase().includes("text/html")) {
         const html = await upstream.text()
-        const rewritten = rewriteFramerHtml(html, canonicalUrlFor(request))
+        const rewritten = rewriteFramerHtml(
+            html,
+            canonicalUrlFor(request),
+            shouldNoindex
+        )
 
-        headers.set("content-type", "text/html; charset=utf-8")
+        headers.set(
+            "content-type",
+            "text/html; charset=utf-8"
+        )
 
         return new Response(rewritten, {
             status: upstream.status,
