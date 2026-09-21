@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import type { ReactNode } from "react"
+import { Suspense, type ReactNode } from "react"
 import { notFound } from "next/navigation"
 
 import BackToListings from "./BackToListings"
@@ -109,6 +109,7 @@ async function getListingAnalytics(
             )}`,
             {
                 next: { revalidate: 3600 },
+                signal: AbortSignal.timeout(2000),
             }
         )
 
@@ -338,37 +339,15 @@ export async function generateMetadata({
     }
 
     const canonicalSlug = String(listing.short_invite || slug)
-    const listingAnalytics = await getListingAnalytics(canonicalSlug)
     const name = getListingName(listing)
     const listingType = getListingType(listing)
     const members = Number(listing.member_count || 0)
 
-    const growth30 = listingAnalytics?.growth?.day_30
-    const hasGrowth =
-        growth30?.change !== null &&
-        growth30?.change !== undefined
-
     const title = `${name} Telegram ${
         listingType === "group" ? "Group " : ""
-    }– Members${hasGrowth ? ", Growth" : ""} & Statistics`
+    }– Members & Statistics`
 
-    const growthPhrase =
-        growth30?.change !== null &&
-        growth30?.change !== undefined
-            ? `, ${signedNumber(growth30.change)} members over 30 days`
-            : ""
-
-    const analyticsBits = [
-        listingAnalytics?.activity?.available ? "recent activity" : null,
-        listingAnalytics?.growth_available ? "growth history" : null,
-        listingAnalytics?.network?.related_communities?.length
-            ? "related communities"
-            : null,
-    ].filter(Boolean)
-
-    const description = `View ${name} Telegram statistics including ${members.toLocaleString()} members${growthPhrase}${
-        analyticsBits.length ? `, ${analyticsBits.join(", ")}` : ""
-    } and channel information.`
+    const description = `View ${name} Telegram statistics including ${members.toLocaleString()} members, categories, activity, and channel information.`
 
     const canonical = `https://telehub.to/channel/${canonicalSlug}`
 
@@ -400,6 +379,512 @@ export async function generateMetadata({
     }
 }
 
+
+async function ListingAnalyticsSection({
+    canonicalSlug,
+    name,
+    username,
+    joinUrl,
+    listingIconUrl,
+}: {
+    canonicalSlug: string
+    name: string
+    username: string
+    joinUrl: string
+    listingIconUrl?: string | null
+}) {
+    const listingAnalytics = await getListingAnalytics(canonicalSlug)
+
+    if (!listingAnalytics) return null
+
+    const hasActivity = Boolean(listingAnalytics.activity?.available)
+    const hasGrowth =
+        Boolean(listingAnalytics.growth_available) &&
+        (listingAnalytics.member_history?.length || 0) >= 2
+    const hasNetwork = Boolean(listingAnalytics.network?.available)
+    const hasRelated =
+        (listingAnalytics.network?.related_communities?.length || 0) > 0
+    const hasRecentPosts = (listingAnalytics.recent_posts?.length || 0) > 0
+    const hasAnyAnalytics =
+        hasActivity || hasGrowth || hasNetwork || hasRelated || hasRecentPosts
+
+    if (!hasAnyAnalytics) return null
+
+    return (
+        <section
+            className="detailsCard"
+            style={{ display: "grid", gap: 24 }}
+        >
+            <div>
+                <h2 style={{ marginBottom: 6 }}>Telegram statistics</h2>
+                <p style={{ margin: 0, color: "#64748b" }}>
+                    Statistics updated {formatUpdatedDate(
+                        listingAnalytics.statistics_updated_at
+                    )}
+                </p>
+            </div>
+        
+            {hasActivity ? (
+            <div>
+                <h3 style={{ marginBottom: 12 }}>Activity</h3>
+                <div
+                    style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                            "repeat(auto-fit, minmax(170px, 1fr))",
+                        gap: 12,
+                    }}
+                >
+                    <AnalyticsStat
+                        label="Last public post"
+                        value={formatRelativeTime(
+                            listingAnalytics.activity?.latest_post_at
+                        )}
+                    />
+                    <AnalyticsStat
+                        label="Recent posts (7d)"
+                        value={
+                            listingAnalytics.activity
+                                ?.posts_observed_last_7_days ?? "—"
+                        }
+                    />
+                    <AnalyticsStat
+                        label="Average posts/day"
+                        value={
+                            listingAnalytics.activity
+                                ?.average_observed_posts_per_day ?? "—"
+                        }
+                    />
+                </div>
+                {listingAnalytics.activity?.warning ? (
+                    <p
+                        style={{
+                            margin: "10px 0 0",
+                            fontSize: 12,
+                            color: "#64748b",
+                        }}
+                    >
+                        {listingAnalytics.activity.warning}
+                    </p>
+                ) : null}
+            </div>
+            ) : null}
+        
+            {hasGrowth ? (
+            <div>
+                <h3 style={{ marginBottom: 12 }}>Member growth</h3>
+                <MemberGrowthChart
+                    history={listingAnalytics.member_history || []}
+                />
+                <div
+                    style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                            "repeat(auto-fit, minmax(150px, 1fr))",
+                        gap: 12,
+                        marginTop: 12,
+                    }}
+                >
+                    <AnalyticsStat
+                        label="24 hours"
+                        value={growthText(
+                            listingAnalytics.growth?.day_1
+                        )}
+                    />
+                    <AnalyticsStat
+                        label="7 days"
+                        value={growthText(
+                            listingAnalytics.growth?.day_7
+                        )}
+                    />
+                    <AnalyticsStat
+                        label="30 days"
+                        value={growthText(
+                            listingAnalytics.growth?.day_30
+                        )}
+                    />
+                </div>
+            </div>
+            ) : null}
+        
+            {hasNetwork ? (
+            <div>
+                <h3 style={{ marginBottom: 12 }}>
+                    Telegram network
+                </h3>
+                <div
+                    style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                            "repeat(auto-fit, minmax(170px, 1fr))",
+                        gap: 12,
+                    }}
+                >
+                    <AnalyticsStat
+                        label="Linked communities"
+                        value={
+                            listingAnalytics.network
+                                ?.linked_communities ?? 0
+                        }
+                    />
+                    <AnalyticsStat
+                        label="Channels linking here"
+                        value={
+                            listingAnalytics.network
+                                ?.channels_linking_here ?? 0
+                        }
+                    />
+                </div>
+            </div>
+            ) : null}
+        
+            {hasRelated ? (
+                <div>
+                    <h3 style={{ marginBottom: 12 }}>
+                        Related communities
+                    </h3>
+        
+                    <div className="relatedCommunityGrid">
+                        {(listingAnalytics.network?.related_communities || []).map(
+                            (related) => (
+                                <a
+                                    key={related.id}
+                                    href={`/channel/${related.short_invite}`}
+                                    className="relatedCommunityCard"
+                                >
+                                    {related.icon_url ? (
+                                        <img
+                                            src={related.icon_url}
+                                            alt=""
+                                            width={44}
+                                            height={44}
+                                            className="relatedCommunityIcon"
+                                        />
+                                    ) : (
+                                        <div className="relatedCommunityIcon relatedCommunityIconFallback">
+                                            {(related.name ||
+                                                related.username ||
+                                                "T")
+                                                .slice(0, 1)
+                                                .toUpperCase()}
+                                        </div>
+                                    )}
+        
+                                    <span className="relatedCommunityCopy">
+                                        <strong>
+                                            {related.name ||
+                                                related.username ||
+                                                "Telegram community"}
+                                        </strong>
+                                        <small>
+                                            {compactNumber(
+                                                related.member_count
+                                            )}{" "}
+                                            members
+                                        </small>
+                                    </span>
+                                </a>
+                            )
+                        )}
+                    </div>
+                </div>
+            ) : null}
+        
+            {hasRecentPosts ? (
+                <div>
+                    <h3 style={{ marginBottom: 12 }}>
+                        Recent public posts
+                    </h3>
+        
+                    <div className="telegramPostGrid">
+                        {(listingAnalytics.recent_posts || []).map(
+                            (rawPost, index) => {
+                                const postText = String(
+                                    rawPost || ""
+                                ).trim()
+        
+                                if (!postText) return null
+        
+                                return (
+                                    <article
+                                        key={`${index}-${postText.slice(
+                                            0,
+                                            32
+                                        )}`}
+                                        className="telegramPostCard"
+                                    >
+                                        <div className="telegramPostHeader">
+                                            <div className="telegramPostIdentity">
+                                                {listingIconUrl ? (
+                                                    <img
+                                                        src={listingIconUrl}
+                                                        alt=""
+                                                        width={40}
+                                                        height={40}
+                                                        className="telegramPostAvatar"
+                                                    />
+                                                ) : (
+                                                    <div className="telegramPostAvatar telegramPostAvatarFallback">
+                                                        {name
+                                                            .slice(
+                                                                0,
+                                                                1
+                                                            )
+                                                            .toUpperCase()}
+                                                    </div>
+                                                )}
+        
+                                                <div className="telegramPostIdentityCopy">
+                                                    <strong>
+                                                        {name}
+                                                    </strong>
+                                                    {username ? (
+                                                        <span>
+                                                            {username.startsWith(
+                                                                "@"
+                                                            )
+                                                                ? username
+                                                                : `@${username}`}
+                                                        </span>
+                                                    ) : null}
+                                                </div>
+                                            </div>
+        
+                                            <span
+                                                className="telegramPostMenu"
+                                                aria-hidden="true"
+                                            >
+                                                •••
+                                            </span>
+                                        </div>
+        
+                                        <div className="telegramPostBody">
+                                            <p>{postText}</p>
+                                        </div>
+        
+                                        <div className="telegramPostFooter">
+                                            <span>
+                                                Public Telegram post
+                                            </span>
+                                            <a
+                                                href={joinUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                            >
+                                                Open Telegram ↗
+                                            </a>
+                                        </div>
+                                    </article>
+                                )
+                            }
+                        )}
+                    </div>
+                </div>
+            ) : null}
+        
+            <style>{`
+                .relatedCommunityGrid {
+                    display: grid;
+                    grid-template-columns: repeat(4, minmax(0, 1fr));
+                    gap: 12px;
+                }
+        
+                .relatedCommunityCard {
+                    min-width: 0;
+                    min-height: 92px;
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    padding: 14px;
+                    border-radius: 14px;
+                    border: 1px solid rgba(15, 23, 42, 0.1);
+                    background: rgba(255, 255, 255, 0.72);
+                    text-decoration: none;
+                    color: inherit;
+                    box-sizing: border-box;
+                    overflow: hidden;
+                }
+        
+                .relatedCommunityIcon {
+                    width: 44px;
+                    height: 44px;
+                    min-width: 44px;
+                    flex: 0 0 44px;
+                    border-radius: 12px;
+                    object-fit: cover;
+                }
+        
+                .relatedCommunityIconFallback {
+                    display: grid;
+                    place-items: center;
+                    background: rgba(44, 116, 244, 0.1);
+                    color: #2c74f4;
+                    font-weight: 800;
+                }
+        
+                .relatedCommunityCopy {
+                    min-width: 0;
+                    display: block;
+                }
+        
+                .relatedCommunityCopy strong {
+                    display: -webkit-box;
+                    min-width: 0;
+                    overflow: hidden;
+                    -webkit-box-orient: vertical;
+                    -webkit-line-clamp: 2;
+                    line-clamp: 2;
+                    line-height: 1.2;
+                    overflow-wrap: anywhere;
+                }
+        
+                .relatedCommunityCopy small {
+                    display: block;
+                    margin-top: 5px;
+                    color: #64748b;
+                    white-space: nowrap;
+                }
+        
+                .telegramPostGrid {
+                    display: grid;
+                    grid-template-columns: repeat(3, minmax(0, 1fr));
+                    gap: 12px;
+                }
+        
+                .telegramPostCard {
+                    min-width: 0;
+                    display: flex;
+                    flex-direction: column;
+                    overflow: hidden;
+                    border-radius: 16px;
+                    border: 1px solid rgba(15, 23, 42, 0.11);
+                    background: rgba(255, 255, 255, 0.82);
+                    box-shadow: 0 8px 24px rgba(18, 42, 82, 0.04);
+                }
+        
+                .telegramPostHeader {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 12px;
+                    padding: 14px 15px 12px;
+                    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+                }
+        
+                .telegramPostIdentity {
+                    min-width: 0;
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                }
+        
+                .telegramPostAvatar {
+                    width: 40px;
+                    height: 40px;
+                    min-width: 40px;
+                    border-radius: 999px;
+                    object-fit: cover;
+                }
+        
+                .telegramPostAvatarFallback {
+                    display: grid;
+                    place-items: center;
+                    background: rgba(44, 116, 244, 0.1);
+                    color: #2c74f4;
+                    font-weight: 800;
+                }
+        
+                .telegramPostIdentityCopy {
+                    min-width: 0;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 2px;
+                }
+        
+                .telegramPostIdentityCopy strong,
+                .telegramPostIdentityCopy span {
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+        
+                .telegramPostIdentityCopy span {
+                    color: #64748b;
+                    font-size: 12px;
+                }
+        
+                .telegramPostMenu {
+                    color: #64748b;
+                    font-weight: 800;
+                    letter-spacing: 1px;
+                    flex: 0 0 auto;
+                }
+        
+                .telegramPostBody {
+                    flex: 1;
+                    min-width: 0;
+                    padding: 16px;
+                }
+        
+                .telegramPostBody p {
+                    margin: 0;
+                    line-height: 1.55;
+                    white-space: pre-wrap;
+                    overflow-wrap: anywhere;
+                    display: -webkit-box;
+                    -webkit-box-orient: vertical;
+                    -webkit-line-clamp: 8;
+                    line-clamp: 8;
+                    overflow: hidden;
+                }
+        
+                .telegramPostFooter {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 12px;
+                    padding: 11px 15px 13px;
+                    border-top: 1px solid rgba(15, 23, 42, 0.08);
+                    color: #64748b;
+                    font-size: 12px;
+                }
+        
+                .telegramPostFooter a {
+                    color: #2c74f4;
+                    text-decoration: none;
+                    font-weight: 700;
+                    white-space: nowrap;
+                }
+        
+                @media (max-width: 900px) {
+                    .relatedCommunityGrid {
+                        grid-template-columns: repeat(2, minmax(0, 1fr));
+                    }
+        
+                    .telegramPostGrid {
+                        grid-template-columns: 1fr;
+                    }
+                }
+        
+                @media (max-width: 560px) {
+                    .relatedCommunityGrid {
+                        grid-template-columns: 1fr;
+                    }
+        
+                    .relatedCommunityCard {
+                        min-height: 76px;
+                    }
+        
+                    .telegramPostFooter {
+                        align-items: flex-start;
+                        flex-direction: column;
+                    }
+                }
+            `}</style>
+        </section>
+    )
+}
+
 export default async function ChannelPage({ params }: PageProps) {
     const { slug } = await params
     const listing = await getListingBySlug(slug)
@@ -423,23 +908,11 @@ export default async function ChannelPage({ params }: PageProps) {
     const isNsfw = Boolean(listing.is_nsfw)
 
     const canonicalSlug = String(listing.short_invite || slug)
-    const listingAnalytics = await getListingAnalytics(canonicalSlug)
     const joinUrl =
         listing.telegram_link ||
         (username
             ? `https://t.me/${username.replace(/^@/, "")}`
             : "#")
-
-    const hasActivity = Boolean(listingAnalytics?.activity?.available)
-    const hasGrowth =
-        Boolean(listingAnalytics?.growth_available) &&
-        (listingAnalytics?.member_history?.length || 0) >= 2
-    const hasNetwork = Boolean(listingAnalytics?.network?.available)
-    const hasRelated =
-        (listingAnalytics?.network?.related_communities?.length || 0) > 0
-    const hasRecentPosts = (listingAnalytics?.recent_posts?.length || 0) > 0
-    const hasAnyAnalytics =
-        hasActivity || hasGrowth || hasNetwork || hasRelated || hasRecentPosts
 
     const backgroundStyle = listing.image_url
         ? {
@@ -576,479 +1049,27 @@ export default async function ChannelPage({ params }: PageProps) {
                         </article>
                     </section>
 
-                    {listingAnalytics && hasAnyAnalytics ? (
-                        <section
-                            className="detailsCard"
-                            style={{ display: "grid", gap: 24 }}
-                        >
-                            <div>
-                                <h2 style={{ marginBottom: 6 }}>Telegram statistics</h2>
+                    <Suspense
+                        fallback={
+                            <section
+                                className="detailsCard"
+                                style={{ display: "grid", gap: 12 }}
+                            >
+                                <h2 style={{ margin: 0 }}>Telegram statistics</h2>
                                 <p style={{ margin: 0, color: "#64748b" }}>
-                                    Statistics updated {formatUpdatedDate(
-                                        listingAnalytics.statistics_updated_at
-                                    )}
+                                    Loading recent Telegram analytics…
                                 </p>
-                            </div>
-
-                            {hasActivity ? (
-                            <div>
-                                <h3 style={{ marginBottom: 12 }}>Activity</h3>
-                                <div
-                                    style={{
-                                        display: "grid",
-                                        gridTemplateColumns:
-                                            "repeat(auto-fit, minmax(170px, 1fr))",
-                                        gap: 12,
-                                    }}
-                                >
-                                    <AnalyticsStat
-                                        label="Last public post"
-                                        value={formatRelativeTime(
-                                            listingAnalytics.activity?.latest_post_at
-                                        )}
-                                    />
-                                    <AnalyticsStat
-                                        label="Recent posts (7d)"
-                                        value={
-                                            listingAnalytics.activity
-                                                ?.posts_observed_last_7_days ?? "—"
-                                        }
-                                    />
-                                    <AnalyticsStat
-                                        label="Average posts/day"
-                                        value={
-                                            listingAnalytics.activity
-                                                ?.average_observed_posts_per_day ?? "—"
-                                        }
-                                    />
-                                </div>
-                                {listingAnalytics.activity?.warning ? (
-                                    <p
-                                        style={{
-                                            margin: "10px 0 0",
-                                            fontSize: 12,
-                                            color: "#64748b",
-                                        }}
-                                    >
-                                        {listingAnalytics.activity.warning}
-                                    </p>
-                                ) : null}
-                            </div>
-                            ) : null}
-
-                            {hasGrowth ? (
-                            <div>
-                                <h3 style={{ marginBottom: 12 }}>Member growth</h3>
-                                <MemberGrowthChart
-                                    history={listingAnalytics.member_history || []}
-                                />
-                                <div
-                                    style={{
-                                        display: "grid",
-                                        gridTemplateColumns:
-                                            "repeat(auto-fit, minmax(150px, 1fr))",
-                                        gap: 12,
-                                        marginTop: 12,
-                                    }}
-                                >
-                                    <AnalyticsStat
-                                        label="24 hours"
-                                        value={growthText(
-                                            listingAnalytics.growth?.day_1
-                                        )}
-                                    />
-                                    <AnalyticsStat
-                                        label="7 days"
-                                        value={growthText(
-                                            listingAnalytics.growth?.day_7
-                                        )}
-                                    />
-                                    <AnalyticsStat
-                                        label="30 days"
-                                        value={growthText(
-                                            listingAnalytics.growth?.day_30
-                                        )}
-                                    />
-                                </div>
-                            </div>
-                            ) : null}
-
-                            {hasNetwork ? (
-                            <div>
-                                <h3 style={{ marginBottom: 12 }}>
-                                    Telegram network
-                                </h3>
-                                <div
-                                    style={{
-                                        display: "grid",
-                                        gridTemplateColumns:
-                                            "repeat(auto-fit, minmax(170px, 1fr))",
-                                        gap: 12,
-                                    }}
-                                >
-                                    <AnalyticsStat
-                                        label="Linked communities"
-                                        value={
-                                            listingAnalytics.network
-                                                ?.linked_communities ?? 0
-                                        }
-                                    />
-                                    <AnalyticsStat
-                                        label="Channels linking here"
-                                        value={
-                                            listingAnalytics.network
-                                                ?.channels_linking_here ?? 0
-                                        }
-                                    />
-                                </div>
-                            </div>
-                            ) : null}
-
-                            {hasRelated ? (
-                                <div>
-                                    <h3 style={{ marginBottom: 12 }}>
-                                        Related communities
-                                    </h3>
-
-                                    <div className="relatedCommunityGrid">
-                                        {(listingAnalytics.network?.related_communities || []).map(
-                                            (related) => (
-                                                <a
-                                                    key={related.id}
-                                                    href={`/channel/${related.short_invite}`}
-                                                    className="relatedCommunityCard"
-                                                >
-                                                    {related.icon_url ? (
-                                                        <img
-                                                            src={related.icon_url}
-                                                            alt=""
-                                                            width={44}
-                                                            height={44}
-                                                            className="relatedCommunityIcon"
-                                                        />
-                                                    ) : (
-                                                        <div className="relatedCommunityIcon relatedCommunityIconFallback">
-                                                            {(related.name ||
-                                                                related.username ||
-                                                                "T")
-                                                                .slice(0, 1)
-                                                                .toUpperCase()}
-                                                        </div>
-                                                    )}
-
-                                                    <span className="relatedCommunityCopy">
-                                                        <strong>
-                                                            {related.name ||
-                                                                related.username ||
-                                                                "Telegram community"}
-                                                        </strong>
-                                                        <small>
-                                                            {compactNumber(
-                                                                related.member_count
-                                                            )}{" "}
-                                                            members
-                                                        </small>
-                                                    </span>
-                                                </a>
-                                            )
-                                        )}
-                                    </div>
-                                </div>
-                            ) : null}
-
-                            {hasRecentPosts ? (
-                                <div>
-                                    <h3 style={{ marginBottom: 12 }}>
-                                        Recent public posts
-                                    </h3>
-
-                                    <div className="telegramPostGrid">
-                                        {(listingAnalytics.recent_posts || []).map(
-                                            (rawPost, index) => {
-                                                const postText = String(
-                                                    rawPost || ""
-                                                ).trim()
-
-                                                if (!postText) return null
-
-                                                return (
-                                                    <article
-                                                        key={`${index}-${postText.slice(
-                                                            0,
-                                                            32
-                                                        )}`}
-                                                        className="telegramPostCard"
-                                                    >
-                                                        <div className="telegramPostHeader">
-                                                            <div className="telegramPostIdentity">
-                                                                {listing.icon_url ? (
-                                                                    <img
-                                                                        src={listing.icon_url}
-                                                                        alt=""
-                                                                        width={40}
-                                                                        height={40}
-                                                                        className="telegramPostAvatar"
-                                                                    />
-                                                                ) : (
-                                                                    <div className="telegramPostAvatar telegramPostAvatarFallback">
-                                                                        {name
-                                                                            .slice(
-                                                                                0,
-                                                                                1
-                                                                            )
-                                                                            .toUpperCase()}
-                                                                    </div>
-                                                                )}
-
-                                                                <div className="telegramPostIdentityCopy">
-                                                                    <strong>
-                                                                        {name}
-                                                                    </strong>
-                                                                    {username ? (
-                                                                        <span>
-                                                                            {username.startsWith(
-                                                                                "@"
-                                                                            )
-                                                                                ? username
-                                                                                : `@${username}`}
-                                                                        </span>
-                                                                    ) : null}
-                                                                </div>
-                                                            </div>
-
-                                                            <span
-                                                                className="telegramPostMenu"
-                                                                aria-hidden="true"
-                                                            >
-                                                                •••
-                                                            </span>
-                                                        </div>
-
-                                                        <div className="telegramPostBody">
-                                                            <p>{postText}</p>
-                                                        </div>
-
-                                                        <div className="telegramPostFooter">
-                                                            <span>
-                                                                Public Telegram post
-                                                            </span>
-                                                            <a
-                                                                href={joinUrl}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                            >
-                                                                Open Telegram ↗
-                                                            </a>
-                                                        </div>
-                                                    </article>
-                                                )
-                                            }
-                                        )}
-                                    </div>
-                                </div>
-                            ) : null}
-
-                            <style>{`
-                                .relatedCommunityGrid {
-                                    display: grid;
-                                    grid-template-columns: repeat(4, minmax(0, 1fr));
-                                    gap: 12px;
-                                }
-
-                                .relatedCommunityCard {
-                                    min-width: 0;
-                                    min-height: 92px;
-                                    display: flex;
-                                    align-items: center;
-                                    gap: 12px;
-                                    padding: 14px;
-                                    border-radius: 14px;
-                                    border: 1px solid rgba(15, 23, 42, 0.1);
-                                    background: rgba(255, 255, 255, 0.72);
-                                    text-decoration: none;
-                                    color: inherit;
-                                    box-sizing: border-box;
-                                    overflow: hidden;
-                                }
-
-                                .relatedCommunityIcon {
-                                    width: 44px;
-                                    height: 44px;
-                                    min-width: 44px;
-                                    flex: 0 0 44px;
-                                    border-radius: 12px;
-                                    object-fit: cover;
-                                }
-
-                                .relatedCommunityIconFallback {
-                                    display: grid;
-                                    place-items: center;
-                                    background: rgba(44, 116, 244, 0.1);
-                                    color: #2c74f4;
-                                    font-weight: 800;
-                                }
-
-                                .relatedCommunityCopy {
-                                    min-width: 0;
-                                    display: block;
-                                }
-
-                                .relatedCommunityCopy strong {
-                                    display: -webkit-box;
-                                    min-width: 0;
-                                    overflow: hidden;
-                                    -webkit-box-orient: vertical;
-                                    -webkit-line-clamp: 2;
-                                    line-clamp: 2;
-                                    line-height: 1.2;
-                                    overflow-wrap: anywhere;
-                                }
-
-                                .relatedCommunityCopy small {
-                                    display: block;
-                                    margin-top: 5px;
-                                    color: #64748b;
-                                    white-space: nowrap;
-                                }
-
-                                .telegramPostGrid {
-                                    display: grid;
-                                    grid-template-columns: repeat(3, minmax(0, 1fr));
-                                    gap: 12px;
-                                }
-
-                                .telegramPostCard {
-                                    min-width: 0;
-                                    display: flex;
-                                    flex-direction: column;
-                                    overflow: hidden;
-                                    border-radius: 16px;
-                                    border: 1px solid rgba(15, 23, 42, 0.11);
-                                    background: rgba(255, 255, 255, 0.82);
-                                    box-shadow: 0 8px 24px rgba(18, 42, 82, 0.04);
-                                }
-
-                                .telegramPostHeader {
-                                    display: flex;
-                                    align-items: center;
-                                    justify-content: space-between;
-                                    gap: 12px;
-                                    padding: 14px 15px 12px;
-                                    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-                                }
-
-                                .telegramPostIdentity {
-                                    min-width: 0;
-                                    display: flex;
-                                    align-items: center;
-                                    gap: 10px;
-                                }
-
-                                .telegramPostAvatar {
-                                    width: 40px;
-                                    height: 40px;
-                                    min-width: 40px;
-                                    border-radius: 999px;
-                                    object-fit: cover;
-                                }
-
-                                .telegramPostAvatarFallback {
-                                    display: grid;
-                                    place-items: center;
-                                    background: rgba(44, 116, 244, 0.1);
-                                    color: #2c74f4;
-                                    font-weight: 800;
-                                }
-
-                                .telegramPostIdentityCopy {
-                                    min-width: 0;
-                                    display: flex;
-                                    flex-direction: column;
-                                    gap: 2px;
-                                }
-
-                                .telegramPostIdentityCopy strong,
-                                .telegramPostIdentityCopy span {
-                                    overflow: hidden;
-                                    text-overflow: ellipsis;
-                                    white-space: nowrap;
-                                }
-
-                                .telegramPostIdentityCopy span {
-                                    color: #64748b;
-                                    font-size: 12px;
-                                }
-
-                                .telegramPostMenu {
-                                    color: #64748b;
-                                    font-weight: 800;
-                                    letter-spacing: 1px;
-                                    flex: 0 0 auto;
-                                }
-
-                                .telegramPostBody {
-                                    flex: 1;
-                                    min-width: 0;
-                                    padding: 16px;
-                                }
-
-                                .telegramPostBody p {
-                                    margin: 0;
-                                    line-height: 1.55;
-                                    white-space: pre-wrap;
-                                    overflow-wrap: anywhere;
-                                    display: -webkit-box;
-                                    -webkit-box-orient: vertical;
-                                    -webkit-line-clamp: 8;
-                                    line-clamp: 8;
-                                    overflow: hidden;
-                                }
-
-                                .telegramPostFooter {
-                                    display: flex;
-                                    align-items: center;
-                                    justify-content: space-between;
-                                    gap: 12px;
-                                    padding: 11px 15px 13px;
-                                    border-top: 1px solid rgba(15, 23, 42, 0.08);
-                                    color: #64748b;
-                                    font-size: 12px;
-                                }
-
-                                .telegramPostFooter a {
-                                    color: #2c74f4;
-                                    text-decoration: none;
-                                    font-weight: 700;
-                                    white-space: nowrap;
-                                }
-
-                                @media (max-width: 900px) {
-                                    .relatedCommunityGrid {
-                                        grid-template-columns: repeat(2, minmax(0, 1fr));
-                                    }
-
-                                    .telegramPostGrid {
-                                        grid-template-columns: 1fr;
-                                    }
-                                }
-
-                                @media (max-width: 560px) {
-                                    .relatedCommunityGrid {
-                                        grid-template-columns: 1fr;
-                                    }
-
-                                    .relatedCommunityCard {
-                                        min-height: 76px;
-                                    }
-
-                                    .telegramPostFooter {
-                                        align-items: flex-start;
-                                        flex-direction: column;
-                                    }
-                                }
-                            `}</style>
-                        </section>
-                    ) : null}
+                            </section>
+                        }
+                    >
+                        <ListingAnalyticsSection
+                            canonicalSlug={canonicalSlug}
+                            name={name}
+                            username={username}
+                            joinUrl={joinUrl}
+                            listingIconUrl={listing.icon_url}
+                        />
+                    </Suspense>
 
                     <section className="detailsCard">
                         <h2>Listing details</h2>
