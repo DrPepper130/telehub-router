@@ -35,6 +35,13 @@ type SitemapEntry = {
     lastmod?: string
 }
 
+const NATIVE_SEO_ENTRIES: SitemapEntry[] = [
+    {
+        url: `${SITE_ORIGIN}/all/gaming`,
+        lastmod: "2026-09-27",
+    },
+]
+
 type ListingRow = {
     id: string
     short_invite?: string | null
@@ -306,6 +313,7 @@ export async function GET() {
 
         const entries = dedupeEntries([
             ...framerEntries,
+            ...NATIVE_SEO_ENTRIES,
             ...languageLandingEntries,
             ...listingEntries,
         ])
