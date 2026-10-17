@@ -109,7 +109,9 @@ async function getListingAnalytics(
             )}`,
             {
                 next: { revalidate: 3600 },
-                signal: AbortSignal.timeout(2000),
+                // Analytics streams independently under Suspense; this is a
+                // safety ceiling, not a page-rendering deadline.
+                signal: AbortSignal.timeout(8000),
             }
         )
 
