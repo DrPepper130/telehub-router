@@ -4,7 +4,7 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 const SITE_ORIGIN = "https://telehub.to"
-const FRAMER_ORIGIN = "https://blessed-estimate-419559.framer.app"
+const FRAMER_ORIGIN = "https://telehubadvertising.framer.website"
 const SUPABASE_BATCH_SIZE = 1000
 
 // This was the date the listing-page rendering/performance architecture was
