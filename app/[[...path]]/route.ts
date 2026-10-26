@@ -4,7 +4,7 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 const SITE_ORIGIN = "https://telehub.to"
-const FRAMER_ORIGIN = "https://blessed-estimate-419559.framer.app"
+const FRAMER_ORIGIN = "https://telehubadvertising.framer.website"
 
 // Public Framer pages should be indexable on telehub.to.
 // These utility/private routes should remain excluded from search indexing.
