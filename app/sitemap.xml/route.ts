@@ -1,10 +1,10 @@
 import { createClient } from "@supabase/supabase-js"
 
 export const runtime = "nodejs"
-// Cache a successfully generated route for one hour using Next.js ISR.
-// Failed regenerations can retain the last successful cached output.
-export const dynamic = "force-static"
-export const revalidate = 3600
+// Do not prerender during next build: Supabase must not be a build dependency.
+export const dynamic = "force-dynamic"
+// Increase the function budget if supported by the Vercel plan/settings.
+export const maxDuration = 60
 
 const SITE_ORIGIN = "https://telehub.to"
 const FRAMER_ORIGIN = "https://telehubadvertising.framer.website"
@@ -196,7 +196,7 @@ async function getApprovedListingEntries(): Promise<{
             .not("short_invite", "is", null)
             .order("id", { ascending: true })
             .range(from, to)
-            .abortSignal(AbortSignal.timeout(12000))
+            .abortSignal(AbortSignal.timeout(20000))
 
         if (error) {
             throw new Error(`Supabase sitemap query failed: ${error.message}`)
@@ -341,6 +341,7 @@ export async function GET() {
             status: 200,
             headers: {
                 "Content-Type": "application/xml; charset=utf-8",
+                "Cache-Control": "public, max-age=0, s-maxage=3600, stale-while-revalidate=86400",
                 "X-TeleHub-Sitemap-Urls": String(entries.length),
                 "X-TeleHub-Listing-Urls": String(listingEntries.length),
                 "X-TeleHub-Language-Landings": String(
@@ -350,8 +351,7 @@ export async function GET() {
             },
         })
     } catch (error) {
-        // Throw rather than return a 500 XML response. This lets Next.js ISR
-        // preserve an already-cached successful generation on regeneration failure.
+        // Never report a failed sitemap as successful empty XML.
         console.error("TeleHub sitemap generation failed:", error)
         throw error
     }
