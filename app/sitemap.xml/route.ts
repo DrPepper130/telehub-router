@@ -1,7 +1,10 @@
 import { createClient } from "@supabase/supabase-js"
 
 export const runtime = "nodejs"
-export const dynamic = "force-dynamic"
+// Cache a successfully generated route for one hour using Next.js ISR.
+// Failed regenerations can retain the last successful cached output.
+export const dynamic = "force-static"
+export const revalidate = 3600
 
 const SITE_ORIGIN = "https://telehub.to"
 const FRAMER_ORIGIN = "https://telehubadvertising.framer.website"
@@ -121,6 +124,7 @@ async function getCanonicalFramerEntries(): Promise<SitemapEntry[]> {
                 Accept: "application/xml,text/xml;q=0.9,*/*;q=0.8",
                 "User-Agent": "TeleHubSitemap/1.0 (+https://telehub.to)",
             },
+            signal: AbortSignal.timeout(8000),
             next: { revalidate: 3600 },
         })
 
@@ -192,6 +196,7 @@ async function getApprovedListingEntries(): Promise<{
             .not("short_invite", "is", null)
             .order("id", { ascending: true })
             .range(from, to)
+            .abortSignal(AbortSignal.timeout(12000))
 
         if (error) {
             throw new Error(`Supabase sitemap query failed: ${error.message}`)
@@ -318,14 +323,24 @@ export async function GET() {
             ...listingEntries,
         ])
 
+        // This route is supposed to contain real approved listings.
+        // Never publish a successful, cacheable empty result after a DB issue.
+        if (listingEntries.length === 0) {
+            throw new Error("Sitemap returned zero approved listings; refusing to cache")
+        }
+
         const xml = renderSitemap(entries)
+        console.info("TeleHub sitemap successfully generated", {
+            totalUrls: entries.length,
+            listingUrls: listingEntries.length,
+            languageLandingUrls: languageLandingEntries.length,
+            framerUrls: framerEntries.length,
+        })
 
         return new Response(xml, {
             status: 200,
             headers: {
                 "Content-Type": "application/xml; charset=utf-8",
-                "Cache-Control":
-                    "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400",
                 "X-TeleHub-Sitemap-Urls": String(entries.length),
                 "X-TeleHub-Listing-Urls": String(listingEntries.length),
                 "X-TeleHub-Language-Landings": String(
@@ -335,17 +350,9 @@ export async function GET() {
             },
         })
     } catch (error) {
+        // Throw rather than return a 500 XML response. This lets Next.js ISR
+        // preserve an already-cached successful generation on regeneration failure.
         console.error("TeleHub sitemap generation failed:", error)
-
-        return new Response(
-            `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>\n`,
-            {
-                status: 500,
-                headers: {
-                    "Content-Type": "application/xml; charset=utf-8",
-                    "Cache-Control": "no-store",
-                },
-            }
-        )
+        throw error
     }
 }
