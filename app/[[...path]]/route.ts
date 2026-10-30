@@ -215,7 +215,7 @@ const getDirectorySnapshot = unstable_cache(
             }
         } finally { clearTimeout(timeout) }
     },
-    ["telehub-directory-ssr-v2"],
+    ["telehub-directory-ssr-v3"],
     { revalidate: 1800 }
 )
 
