@@ -69,7 +69,7 @@ const getHomepageSnapshot = unstable_cache(async (): Promise<HomepageListing[]> 
         if (!Array.isArray(data?.listings)) return []
         return data.listings as HomepageListing[]
     } finally { clearTimeout(timeout) }
-}, ["telehub-homepage-ssr-v1"], { revalidate: 600 })
+}, ["telehub-homepage-ssr-v1"], { revalidate: 1800 })
 
 function homepageRank(item: HomepageListing) {
     if (item.paid_rank_status !== "active") return 0
