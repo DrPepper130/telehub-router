@@ -99,7 +99,7 @@ function renderHomepageSnapshot(listings: HomepageListing[]): string {
         const url = `/channel/${encodeURIComponent(slug)}`
         const name = String(item.channel_name || item.telegram_title || "Telegram Community")
         const text = String(item.description || item.telegram_description || "")
-            .replace(/\s+/g, " ").trim().slice(0, 260)
+            .replace(/\s+/g, " ").trim().slice(0, 160)
         const category = (item.categories || []).slice(0, 2).join(" · ")
         const members = Number(item.member_count || 0)
         const votes = Number(item.votes_count || 0)
@@ -145,65 +145,109 @@ body:has(.telegram-grid .telegram-listing-card) #telehub-ssr-listings{display:no
 </style>`
 
 
-// Only the unfiltered first page of the three main directory routes receives
-// this snapshot. Filtered/search/paginated URLs must not show mismatched data.
+// Only stable, crawlable directory URLs receive server-rendered snapshots.
+// Search, arbitrary filters and NSFW mode remain interactive only.
 type DirectoryKind = "all" | "channel" | "group"
-
-function baseDirectoryKind(request: NextRequest): DirectoryKind | null {
-    const path = normalizePathname(request.nextUrl.pathname).toLowerCase()
-    const kind: DirectoryKind | null = path === "/all" ? "all"
-        : path === "/channels" ? "channel"
-        : path === "/groups" ? "group" : null
-    if (!kind) return null
-    const params = request.nextUrl.searchParams
-    // Tracking query parameters do not change which listings are shown.
-    const contentParams = ["q", "category", "language", "page", "sort", "nsfw", "type"]
-    if (contentParams.some(key => params.has(key))) return null
-    return kind
+type DirectoryRoute = {
+    kind: DirectoryKind
+    page: number
+    category: string
+    language: string
+    pathname: string
+    categoryType: string
+}
+const SEO_CATEGORIES: Record<string, string> = {
+    gaming: "Gaming", crypto: "Crypto", ai: "AI", anime: "Anime",
+    music: "Music", news: "News", trading: "Trading", technology: "Technology",
 }
 
+function directoryRouteFor(request: NextRequest): DirectoryRoute | null {
+    const pathname = normalizePathname(request.nextUrl.pathname).toLowerCase()
+    const segments = pathname.split("/").filter(Boolean)
+    const kind: DirectoryKind | null = segments[0] === "all" ? "all"
+        : segments[0] === "channels" ? "channel"
+        : segments[0] === "groups" ? "group" : null
+    if (!kind || segments.length > 2) return null
+    const params = request.nextUrl.searchParams
+    const pageParam = params.get("page")
+    const page = pageParam === null ? 1 : Number(pageParam)
+    // Bound the cache-key space so arbitrary URLs cannot create unlimited queries.
+    if (!Number.isSafeInteger(page) || page < 1 || page > 200) return null
+    if (params.has("q") || params.has("sort") || params.has("nsfw") || params.has("category") || params.has("language")) return null
+
+    let category = ""
+    let language = ""
+    if (segments.length === 2) {
+        const slug = segments[1]
+        if (kind === "all" && SEO_CATEGORIES[slug]) category = SEO_CATEGORIES[slug]
+        else if (/^[a-z]{2,3}$/.test(slug) || slug === "mixed") language = slug
+        else return null
+    }
+    const categoryType = String(params.get("type") || "").toLowerCase()
+    if (params.has("type") && (!category || !["channel", "group"].includes(categoryType))) return null
+    // Keep cache keys canonical: only an optional page and category-specific type.
+    for (const key of params.keys()) {
+        if (!["page", "type"].includes(key) && !key.startsWith("utm_") && key !== "gclid" && key !== "fbclid") return null
+    }
+    return { kind, page, category, language, pathname, categoryType }
+}
+
+type DirectorySnapshot = { listings: HomepageListing[], totalPages: number }
 const getDirectorySnapshot = unstable_cache(
-    async (kind: DirectoryKind): Promise<HomepageListing[]> => {
+    async (kind: DirectoryKind, page: number, category: string, language: string, categoryType: string): Promise<DirectorySnapshot> => {
         const controller = new AbortController()
         const timeout = setTimeout(() => controller.abort(), 3500)
         try {
             const query = new URLSearchParams({
-                type: kind, page: "1", page_size: "18", sort: "Top", nsfw: "0",
+                type: categoryType || kind, page: String(page), page_size: "18", sort: "Top", nsfw: "0",
             })
+            if (category) query.set("category", category)
+            if (language) query.set("language", language)
             const response = await fetch(`${BACKEND_ORIGIN}/api/directory?${query}`, {
                 headers: { Accept: "application/json" },
-                signal: controller.signal,
-                cache: "no-store",
+                signal: controller.signal, cache: "no-store",
             })
             if (!response.ok) throw new Error(`Directory ${kind} API ${response.status}`)
             const data = await response.json()
-            return Array.isArray(data?.listings) ? data.listings : []
-        } finally {
-            clearTimeout(timeout)
-        }
+            return {
+                listings: Array.isArray(data?.listings) ? data.listings : [],
+                totalPages: Math.max(1, Number(data?.total_pages || 1)),
+            }
+        } finally { clearTimeout(timeout) }
     },
-    ["telehub-directory-ssr-v1"],
-    { revalidate: 600 }
+    ["telehub-directory-ssr-v2"],
+    { revalidate: 1800 }
 )
 
-function renderDirectorySnapshot(kind: DirectoryKind, listings: HomepageListing[]) {
-    const allowed = listings.filter(item => {
+function directoryPageLink(route: DirectoryRoute, page: number) {
+    const params = new URLSearchParams()
+    if (route.categoryType) params.set("type", route.categoryType)
+    if (page > 1) params.set("page", String(page))
+    return `${route.pathname}${params.size ? `?${params.toString()}` : ""}`
+}
+
+function renderDirectorySnapshot(route: DirectoryRoute, data: DirectorySnapshot) {
+    const { kind, page, category, language, categoryType } = route
+    const allowed = data.listings.filter(item => {
         if (!cleanSlug(item.short_invite) || item.is_nsfw || item.is_banned) return false
         if (item.status && item.status !== "approved") return false
         const type = String(item.listing_type || "").toLowerCase()
-        if (kind === "channel" && type && type !== "channel") return false
-        if (kind === "group" && type && type !== "group") return false
+        const expectedType = categoryType || kind
+        if (expectedType === "channel" && type && type !== "channel") return false
+        if (expectedType === "group" && type && type !== "group") return false
         return true
     }).slice(0, 18)
     if (!allowed.length) return ""
 
-    const noun = kind === "group" ? "Groups" : kind === "channel" ? "Channels" : "Communities"
+    const noun = categoryType === "group" || (!categoryType && kind === "group") ? "Groups"
+        : categoryType === "channel" || (!categoryType && kind === "channel") ? "Channels" : "Communities"
+    const label = category || (language ? language.toUpperCase() : "Popular")
     const cards = allowed.map(item => {
         const url = `/channel/${encodeURIComponent(cleanSlug(item.short_invite))}`
         const name = String(item.channel_name || item.telegram_title || "Telegram Community")
         const description = String(item.description || item.telegram_description || "")
-            .replace(/\s+/g, " ").trim().slice(0, 260)
-        const category = Array.isArray(item.categories) ? item.categories.slice(0, 2).join(" · ") : ""
+            .replace(/\s+/g, " ").trim().slice(0, 160)
+        const categoryLabel = Array.isArray(item.categories) ? item.categories.slice(0, 2).join(" · ") : ""
         const members = Math.max(0, Number(item.member_count || 0))
         const votes = Math.max(0, Number(item.votes_count || 0))
         const iconUrl = safeImageUrl(item.icon_url)
@@ -212,16 +256,19 @@ function renderDirectorySnapshot(kind: DirectoryKind, listings: HomepageListing[
             : `<span class="th-ssr-icon">✈</span>`
         return `<article class="th-ssr-card">
           <div class="th-ssr-title">${icon}<div><h3><a href="${url}">${escapeHtml(name)}</a></h3>
-          <small>${item.listing_type === "group" ? "Telegram group" : "Telegram channel"}${category ? ` · ${escapeHtml(category)}` : ""}</small></div></div>
+          <small>${item.listing_type === "group" ? "Telegram group" : "Telegram channel"}${categoryLabel ? ` · ${escapeHtml(categoryLabel)}` : ""}</small></div></div>
           <p>${escapeHtml(description || `Explore ${name} on TeleHub.`)}</p>
           <div class="th-ssr-stats"><span>${Number.isFinite(members) ? members.toLocaleString("en-US") : "0"} members</span><span>${Number.isFinite(votes) ? votes.toLocaleString("en-US") : "0"} votes</span></div>
           <a class="th-ssr-view" href="${url}">View community</a>
         </article>`
     }).join("")
-    return `<section id="telehub-directory-ssr" aria-label="Popular Telegram ${noun}" class="th-ssr-section">
-      <div class="th-ssr-inner"><h2>Popular Telegram ${noun}</h2>
-      <p>Explore Telegram ${noun.toLowerCase()} ranked by TeleHub.</p>
-      <div class="th-ssr-grid">${cards}</div></div></section>`
+    const prev = page > 1 ? `<a href="${escapeHtml(directoryPageLink(route, page - 1))}">Previous page</a>` : ""
+    const next = page < data.totalPages ? `<a href="${escapeHtml(directoryPageLink(route, page + 1))}">Next page</a>` : ""
+    const links = prev || next ? `<nav class="th-ssr-pages" aria-label="Directory pages">${prev}${next}</nav>` : ""
+    return `<section id="telehub-directory-ssr" aria-label="${escapeHtml(label)} Telegram ${noun}" class="th-ssr-section">
+      <div class="th-ssr-inner"><h2>${escapeHtml(label)} Telegram ${noun}</h2>
+      <p>Explore Telegram ${noun.toLowerCase()} ranked by TeleHub${page > 1 ? ` · Page ${page}` : ""}.</p>
+      <div class="th-ssr-grid">${cards}</div>${links}</div></section>`
 }
 
 // Shared appearance with the homepage fallback; Framer's interactive directory
@@ -231,6 +278,7 @@ const DIRECTORY_SSR_STYLES = SSR_STYLES.replaceAll(
 ).replace('id="telehub-ssr-styles"', 'id="telehub-directory-ssr-styles"')
  .replace('body:has(.telegram-grid .telegram-listing-card) #telehub-directory-ssr',
           'body:has(.telegram-listing-card[data-listing-id]) #telehub-directory-ssr')
+ .replace('</style>', '#telehub-directory-ssr .th-ssr-pages{display:flex;gap:20px;justify-content:center;padding:28px 0 0}#telehub-directory-ssr .th-ssr-pages a{color:#006fff;font-weight:700}</style>')
 
 function normalizePathname(pathname: string) {
     if (!pathname || pathname === "/") return "/"
@@ -243,10 +291,14 @@ function shouldNoindexPath(pathname: string) {
 }
 function upstreamPathFor(pathname: string) {
     const match = pathname.match(/^\/(channels|groups|all)\/([a-z]{2,3}|mixed)\/?$/i)
+    // Category routes need Framer's own category-specific landing page HTML.
+    if (match && match[1].toLowerCase() === "all" && SEO_CATEGORIES[match[2].toLowerCase()]) return pathname
     return match ? `/${match[1].toLowerCase()}` : pathname || "/"
 }
 function canonicalUrlFor(request: NextRequest) {
     const pathname = request.nextUrl.pathname || "/"
+    const route = directoryRouteFor(request)
+    if (route) return `${SITE_ORIGIN}${directoryPageLink(route, route.page)}`
     return pathname === "/" ? `${SITE_ORIGIN}/` : `${SITE_ORIGIN}${pathname}`
 }
 function replaceOrInsertCanonical(html: string, canonical: string) {
@@ -289,7 +341,9 @@ function copyResponseHeaders(source: Headers, shouldNoindex: boolean) {
 
 async function proxy(request: NextRequest) {
     const incomingPath = request.nextUrl.pathname || "/"
-    const shouldNoindex = shouldNoindexPath(normalizePathname(incomingPath))
+    const isDirectoryUrl = /^\/(all|channels|groups)(?:\/|$)/i.test(incomingPath)
+    const shouldNoindex = shouldNoindexPath(normalizePathname(incomingPath)) ||
+        (isDirectoryUrl && !directoryRouteFor(request))
     const upstreamUrl = new URL(upstreamPathFor(incomingPath), FRAMER_ORIGIN)
     upstreamUrl.search = request.nextUrl.search
     const requestHeaders = new Headers(request.headers)
@@ -317,18 +371,20 @@ async function proxy(request: NextRequest) {
             }
         }
         if (request.method === "GET" && upstream.ok) {
-            const directoryKind = baseDirectoryKind(request)
-            if (directoryKind) {
+            const directoryRoute = directoryRouteFor(request)
+            if (directoryRoute) {
                 try {
-                    const snapshot = renderDirectorySnapshot(
-                        directoryKind, await getDirectorySnapshot(directoryKind)
+                    const data = await getDirectorySnapshot(
+                        directoryRoute.kind, directoryRoute.page, directoryRoute.category,
+                        directoryRoute.language, directoryRoute.categoryType
                     )
+                    const snapshot = renderDirectorySnapshot(directoryRoute, data)
                     if (snapshot && /<\/body>/i.test(html)) {
                         html = html.replace(/<\/head>/i, `${DIRECTORY_SSR_STYLES}</head>`)
                         html = html.replace(/<\/body>/i, `${snapshot}</body>`)
                     }
                 } catch (error) {
-                    console.warn(`TeleHub ${directoryKind} directory SSR unavailable:`, error)
+                    console.warn(`TeleHub ${directoryRoute.kind} directory SSR unavailable:`, error)
                 }
             }
         }
