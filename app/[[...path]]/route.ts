@@ -144,6 +144,94 @@ const SSR_STYLES = `<style id="telehub-ssr-styles">
 body:has(.telegram-grid .telegram-listing-card) #telehub-ssr-listings{display:none!important}
 </style>`
 
+
+// Only the unfiltered first page of the three main directory routes receives
+// this snapshot. Filtered/search/paginated URLs must not show mismatched data.
+type DirectoryKind = "all" | "channel" | "group"
+
+function baseDirectoryKind(request: NextRequest): DirectoryKind | null {
+    const path = normalizePathname(request.nextUrl.pathname).toLowerCase()
+    const kind: DirectoryKind | null = path === "/all" ? "all"
+        : path === "/channels" ? "channel"
+        : path === "/groups" ? "group" : null
+    if (!kind) return null
+    const params = request.nextUrl.searchParams
+    // Tracking query parameters do not change which listings are shown.
+    const contentParams = ["q", "category", "language", "page", "sort", "nsfw", "type"]
+    if (contentParams.some(key => params.has(key))) return null
+    return kind
+}
+
+const getDirectorySnapshot = unstable_cache(
+    async (kind: DirectoryKind): Promise<HomepageListing[]> => {
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 3500)
+        try {
+            const query = new URLSearchParams({
+                type: kind, page: "1", page_size: "18", sort: "Top", nsfw: "0",
+            })
+            const response = await fetch(`${BACKEND_ORIGIN}/api/directory?${query}`, {
+                headers: { Accept: "application/json" },
+                signal: controller.signal,
+                cache: "no-store",
+            })
+            if (!response.ok) throw new Error(`Directory ${kind} API ${response.status}`)
+            const data = await response.json()
+            return Array.isArray(data?.listings) ? data.listings : []
+        } finally {
+            clearTimeout(timeout)
+        }
+    },
+    ["telehub-directory-ssr-v1"],
+    { revalidate: 600 }
+)
+
+function renderDirectorySnapshot(kind: DirectoryKind, listings: HomepageListing[]) {
+    const allowed = listings.filter(item => {
+        if (!cleanSlug(item.short_invite) || item.is_nsfw || item.is_banned) return false
+        if (item.status && item.status !== "approved") return false
+        const type = String(item.listing_type || "").toLowerCase()
+        if (kind === "channel" && type && type !== "channel") return false
+        if (kind === "group" && type && type !== "group") return false
+        return true
+    }).slice(0, 18)
+    if (!allowed.length) return ""
+
+    const noun = kind === "group" ? "Groups" : kind === "channel" ? "Channels" : "Communities"
+    const cards = allowed.map(item => {
+        const url = `/channel/${encodeURIComponent(cleanSlug(item.short_invite))}`
+        const name = String(item.channel_name || item.telegram_title || "Telegram Community")
+        const description = String(item.description || item.telegram_description || "")
+            .replace(/\s+/g, " ").trim().slice(0, 260)
+        const category = Array.isArray(item.categories) ? item.categories.slice(0, 2).join(" · ") : ""
+        const members = Math.max(0, Number(item.member_count || 0))
+        const votes = Math.max(0, Number(item.votes_count || 0))
+        const iconUrl = safeImageUrl(item.icon_url)
+        const icon = iconUrl
+            ? `<img src="${escapeHtml(iconUrl)}" alt="" loading="lazy" width="44" height="44">`
+            : `<span class="th-ssr-icon">✈</span>`
+        return `<article class="th-ssr-card">
+          <div class="th-ssr-title">${icon}<div><h3><a href="${url}">${escapeHtml(name)}</a></h3>
+          <small>${item.listing_type === "group" ? "Telegram group" : "Telegram channel"}${category ? ` · ${escapeHtml(category)}` : ""}</small></div></div>
+          <p>${escapeHtml(description || `Explore ${name} on TeleHub.`)}</p>
+          <div class="th-ssr-stats"><span>${Number.isFinite(members) ? members.toLocaleString("en-US") : "0"} members</span><span>${Number.isFinite(votes) ? votes.toLocaleString("en-US") : "0"} votes</span></div>
+          <a class="th-ssr-view" href="${url}">View community</a>
+        </article>`
+    }).join("")
+    return `<section id="telehub-directory-ssr" aria-label="Popular Telegram ${noun}" class="th-ssr-section">
+      <div class="th-ssr-inner"><h2>Popular Telegram ${noun}</h2>
+      <p>Explore Telegram ${noun.toLowerCase()} ranked by TeleHub.</p>
+      <div class="th-ssr-grid">${cards}</div></div></section>`
+}
+
+// Shared appearance with the homepage fallback; Framer's interactive directory
+// cards replace the snapshot as soon as the requested results finish loading.
+const DIRECTORY_SSR_STYLES = SSR_STYLES.replaceAll(
+    "#telehub-ssr-listings", "#telehub-directory-ssr"
+).replace('id="telehub-ssr-styles"', 'id="telehub-directory-ssr-styles"')
+ .replace('body:has(.telegram-grid .telegram-listing-card) #telehub-directory-ssr',
+          'body:has(.telegram-listing-card[data-listing-id]) #telehub-directory-ssr')
+
 function normalizePathname(pathname: string) {
     if (!pathname || pathname === "/") return "/"
     return `/${pathname.replace(/^\/+|\/+$/g, "")}`
@@ -226,6 +314,22 @@ async function proxy(request: NextRequest) {
             } catch (error) {
                 // Homepage stays available even when the cache/backend is down.
                 console.warn("TeleHub homepage SSR fallback unavailable:", error)
+            }
+        }
+        if (request.method === "GET" && upstream.ok) {
+            const directoryKind = baseDirectoryKind(request)
+            if (directoryKind) {
+                try {
+                    const snapshot = renderDirectorySnapshot(
+                        directoryKind, await getDirectorySnapshot(directoryKind)
+                    )
+                    if (snapshot && /<\/body>/i.test(html)) {
+                        html = html.replace(/<\/head>/i, `${DIRECTORY_SSR_STYLES}</head>`)
+                        html = html.replace(/<\/body>/i, `${snapshot}</body>`)
+                    }
+                } catch (error) {
+                    console.warn(`TeleHub ${directoryKind} directory SSR unavailable:`, error)
+                }
             }
         }
         headers.set("content-type", "text/html; charset=utf-8")
