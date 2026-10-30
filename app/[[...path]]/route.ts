@@ -330,12 +330,21 @@ function copyResponseHeaders(source: Headers, shouldNoindex: boolean) {
     const headers = new Headers()
     source.forEach((value, key) => {
         const lower = key.toLowerCase()
-        if (["content-length", "content-encoding", "transfer-encoding", "connection", "x-robots-tag"].includes(lower)) return
+        if ([
+            "content-length",
+            "content-encoding",
+            "transfer-encoding",
+            "connection",
+            "x-robots-tag",
+            "etag",
+            "last-modified",
+        ].includes(lower)) return
         headers.set(key, lower === "location" ? value.replace(FRAMER_ORIGIN, SITE_ORIGIN) : value)
     })
     if (shouldNoindex) headers.set("X-Robots-Tag", "noindex, nofollow")
     else headers.delete("X-Robots-Tag")
     headers.set("x-telehub-framer-proxy", "homepage-ssr-fallback-v1")
+    headers.set("Cache-Control", "public, max-age=0, must-revalidate")
     return headers
 }
 
@@ -350,6 +359,10 @@ async function proxy(request: NextRequest) {
     requestHeaders.set("x-forwarded-host", "telehub.to")
     requestHeaders.set("x-forwarded-proto", "https")
     requestHeaders.delete("content-length")
+    requestHeaders.delete("if-none-match")
+    requestHeaders.delete("if-modified-since")
+    requestHeaders.delete("if-match")
+    requestHeaders.delete("if-unmodified-since")
     const body = ["GET", "HEAD"].includes(request.method) ? undefined : await request.arrayBuffer()
     const upstream = await fetch(upstreamUrl, { method: request.method, headers: requestHeaders,
         body, redirect: "manual", cache: "no-store" })
