@@ -119,7 +119,20 @@ async function getListingAnalytics(
 
         const payload = (await response.json()) as ListingAnalytics
         return payload?.ok ? payload : null
-    } catch {
+    } catch (error) {
+        const cause = error instanceof Error ? error.cause : undefined
+        const causeCode =
+            cause && typeof cause === "object" && "code" in cause
+                ? String(cause.code)
+                : undefined
+
+        console.error("[telehub-analytics] Render fetch failed", {
+            slug: normalizedSlug,
+            endpoint: "/api/public/listing-analytics",
+            message: error instanceof Error ? error.message : String(error),
+            cause: cause instanceof Error ? cause.message : String(cause ?? ""),
+            code: causeCode,
+        })
         return null
     }
 }
