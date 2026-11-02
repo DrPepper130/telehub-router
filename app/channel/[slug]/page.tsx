@@ -108,7 +108,7 @@ async function getListingAnalytics(
                 normalizedSlug
             )}`,
             {
-                next: { revalidate: 3600 },
+                cache: "no-store",
                 // Analytics streams independently under Suspense; this is a
                 // safety ceiling, not a page-rendering deadline.
                 signal: AbortSignal.timeout(8000),
